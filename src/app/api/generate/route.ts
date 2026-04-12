@@ -1,52 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { buildGenerationContext } from "@/lib/generation/generation-context";
+import {
+  GenerateRequestValidationError,
+  parseGenerateRequestPayload,
+  prepareRewriteGeneration,
+} from "@/lib/generation/generate-route";
 import { generateDraft } from "@/lib/generation/generation-service";
 import {
   OpenRouterGenerationError,
+  extractRewriteBriefWithOpenRouter,
   generateVideoScriptWithOpenRouter,
   generateXiaohongshuDraftWithOpenRouter,
   generateTwitterDraftWithOpenRouter,
   generateWechatArticleWithOpenRouter,
   getValidatedOpenRouterConfig,
 } from "@/lib/generation/openrouter-generation-service";
-import { listPromptSettings } from "@/lib/settings/prompt-settings-server";
-import { isPlatformType, type PlatformType } from "@/lib/types/platform";
+import {
+  listPromptSettings,
+  PromptPresetError,
+} from "@/lib/settings/prompt-settings-server";
 
 type GenerateRequestBody = {
   userPrompt?: unknown;
   selectedPlatforms?: unknown;
+  rewriteSource?: unknown;
+  selectedPromptPresetByPlatform?: unknown;
+  wechatFinalization?: unknown;
 };
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as GenerateRequestBody;
-    const userPrompt =
-      typeof body.userPrompt === "string" ? body.userPrompt.trim() : "";
-    const selectedPlatforms = Array.isArray(body.selectedPlatforms)
-      ? body.selectedPlatforms.filter(
-          (platform): platform is PlatformType =>
-            typeof platform === "string" && isPlatformType(platform),
-        )
-      : [];
+    const {
+      userPrompt,
+      selectedPlatforms,
+      rewriteSource,
+      selectedPromptPresetByPlatform,
+      wechatFinalization,
+    } =
+      parseGenerateRequestPayload(body);
+    const preparedRewrite = await prepareRewriteGeneration(rewriteSource, {
+      extractRewriteBrief: extractRewriteBriefWithOpenRouter,
+    });
 
-    if (!userPrompt || selectedPlatforms.length === 0) {
-      return NextResponse.json(
-        {
-          error: {
-            code: "invalid_generate_request",
-            message: "userPrompt and selectedPlatforms are required",
-          },
-        },
-        { status: 400 },
-      );
-    }
-
-    const promptSettings = listPromptSettings(selectedPlatforms);
+    const promptSettings = listPromptSettings(
+      selectedPlatforms,
+      selectedPromptPresetByPlatform,
+    );
     const context = buildGenerationContext({
       userPrompt,
       selectedPlatforms,
       promptSettings,
+      rewriteSource: preparedRewrite.rewriteSource,
+      rewriteMode: preparedRewrite.rewriteMode,
+      rewriteBrief: preparedRewrite.rewriteBrief,
+      rewriteChunkCount: preparedRewrite.rewriteChunkCount,
+      wechatFinalization,
       now: new Date().toISOString(),
       generatorVersion: "phase2-openrouter-v1",
     });
@@ -71,6 +81,30 @@ export async function POST(request: NextRequest) {
       promptSettings,
     });
   } catch (error) {
+    if (error instanceof GenerateRequestValidationError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "invalid_generate_request",
+            message: error.message,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
+    if (error instanceof PromptPresetError) {
+      return NextResponse.json(
+        {
+          error: {
+            code: "invalid_generate_request",
+            message: error.message,
+          },
+        },
+        { status: 400 },
+      );
+    }
+
     if (error instanceof OpenRouterGenerationError) {
       return NextResponse.json(
         {

@@ -52,7 +52,10 @@ export async function handleWechatAccountsRequest() {
   }
 }
 
-export async function handleWechatPublishRequest(payload?: unknown) {
+export async function handleWechatPublishRequest(
+  payload?: unknown,
+  baseOrigin?: string,
+) {
   try {
     const apiKey = getPublishSetting("wechat_publish_api_key").value.trim();
     const baseUrl = getPublishSetting("wechat_publish_base_url").value.trim();
@@ -69,6 +72,7 @@ export async function handleWechatPublishRequest(payload?: unknown) {
     const result = await publishWechatArticle(
       { apiKey, baseUrl },
       parsedRequest,
+      baseOrigin || "http://localhost:3000",
     );
 
     return {

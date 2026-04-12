@@ -1,6 +1,7 @@
 import { searchHistoryRecords } from "./history-search.ts";
 import type { HistoryStorageAdapter } from "./history-storage.ts";
 import type { HistoryRecord } from "../types/history.ts";
+import { normalizeWechatArticleMarkdownBody } from "../workspace/wechat-markdown.ts";
 
 type StorageLike = {
   getItem(key: string): string | null;
@@ -96,7 +97,7 @@ function readAll(storageOverride: StorageLike | undefined, storageKey: string) {
   }
 
   const parsed = JSON.parse(raw) as HistoryRecord[];
-  return [...parsed].sort((left, right) =>
+  return [...parsed].map(normalizeHistoryRecord).sort((left, right) =>
     right.updatedAt.localeCompare(left.updatedAt),
   );
 }
@@ -117,6 +118,22 @@ function writeAll(
   );
 
   storage.setItem(storageKey, JSON.stringify(sorted));
+}
+
+function normalizeHistoryRecord(record: HistoryRecord): HistoryRecord {
+  const wechatArticle = record.content.wechat_article;
+
+  if (!wechatArticle) {
+    return record;
+  }
+
+  return {
+    ...record,
+    content: {
+      ...record.content,
+      wechat_article: normalizeWechatArticleMarkdownBody(wechatArticle),
+    },
+  };
 }
 
 function getStorage(storageOverride?: StorageLike) {

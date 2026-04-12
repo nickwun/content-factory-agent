@@ -86,9 +86,11 @@ test("publishWechatArticle maps article publish payload and response", async () 
         platform: "wechat_article",
         recordId: "record-1",
         title: "高效工作的 5 个方法",
+        coverImageUrl: "/api/generated-images/cover.jpg",
         blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
       },
     },
+    "https://content-agent.example.com",
     async (input, init) => {
       assert.equal(String(input), "https://wx.limyai.com/api/openapi/wechat-publish");
       assert.equal(init?.method, "POST");
@@ -98,14 +100,23 @@ test("publishWechatArticle maps article publish payload and response", async () 
         title: string;
         content: string;
         summary: string;
+        coverImage?: string;
         contentFormat: string;
         articleType: string;
       };
 
       assert.equal(payload.wechatAppid, "gh_123");
       assert.equal(payload.title, "高效工作的 5 个方法");
+      assert.match(
+        payload.content,
+        /^<p><img src="https:\/\/content-agent\.example\.com\/api\/generated-images\/cover\.jpg" alt="" \/><\/p>/,
+      );
       assert.match(payload.content, /<p>正文内容<\/p>/);
       assert.equal(payload.summary, "正文内容");
+      assert.equal(
+        payload.coverImage,
+        "https://content-agent.example.com/api/generated-images/cover.jpg",
+      );
       assert.equal(payload.contentFormat, "html");
       assert.equal(payload.articleType, "news");
 
@@ -150,6 +161,7 @@ test("publishWechatArticle maps ACCOUNT_NOT_FOUND into account_not_found", async
             blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
           },
         },
+        "https://content-agent.example.com",
         async () =>
           new Response(
             JSON.stringify({

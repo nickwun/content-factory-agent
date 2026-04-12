@@ -7,6 +7,10 @@ export type RawXiaohongshuOutput = {
   tags?: unknown;
 };
 
+export type XiaohongshuNormalizeOptions = {
+  preserveLongformCaption?: boolean;
+};
+
 type RawImageSuggestion = {
   title?: unknown;
   description?: unknown;
@@ -21,16 +25,20 @@ const DEFAULT_IMAGE_DESCRIPTION =
 const MIN_IMAGE_SUGGESTIONS = 3;
 const MAX_IMAGE_SUGGESTIONS = 9;
 const MAX_CAPTION_LENGTH = 220;
+const MAX_LONGFORM_CAPTION_LENGTH = 1_200;
 const MAX_TAGS = 8;
 
-export function normalizeXiaohongshuOutput(raw: unknown): XiaohongshuContent {
+export function normalizeXiaohongshuOutput(
+  raw: unknown,
+  options: XiaohongshuNormalizeOptions = {},
+): XiaohongshuContent {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
     throw new Error("Invalid xiaohongshu output");
   }
 
   const source = raw as RawXiaohongshuOutput;
   const imageSuggestions = normalizeImageSuggestions(source.imageSuggestions);
-  const caption = normalizeCaption(source.caption);
+  const caption = normalizeCaption(source.caption, options);
 
   return {
     platform: "xiaohongshu",
@@ -85,19 +93,43 @@ export function extractXiaohongshuJsonPayload(rawText: string) {
   return JSON.parse(jsonText);
 }
 
-function normalizeCaption(rawCaption: unknown) {
+function normalizeCaption(
+  rawCaption: unknown,
+  options: XiaohongshuNormalizeOptions,
+) {
   const raw = typeof rawCaption === "string" ? rawCaption : "";
-  const normalized = raw.replace(/\s+/g, " ").trim();
+  const normalized = options.preserveLongformCaption
+    ? normalizeLongformCaption(raw)
+    : raw.replace(/\s+/g, " ").trim();
 
   if (!normalized) {
     return DEFAULT_CAPTION_PLACEHOLDER;
   }
 
-  if (normalized.length <= MAX_CAPTION_LENGTH) {
+  const maxLength = options.preserveLongformCaption
+    ? MAX_LONGFORM_CAPTION_LENGTH
+    : MAX_CAPTION_LENGTH;
+
+  if (normalized.length <= maxLength) {
     return normalized;
   }
 
-  return `${normalized.slice(0, MAX_CAPTION_LENGTH - 1).trim()}…`;
+  return `${normalized.slice(0, maxLength - 1).trim()}…`;
+}
+
+function normalizeLongformCaption(raw: string) {
+  return raw
+    .replace(/\r\n?/g, "\n")
+    .trim()
+    .split(/\n{2,}/)
+    .map((paragraph) =>
+      paragraph
+        .replace(/[ \t]+/g, " ")
+        .replace(/\n+/g, " ")
+        .trim(),
+    )
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 function normalizeImageSuggestions(rawImageSuggestions: unknown) {

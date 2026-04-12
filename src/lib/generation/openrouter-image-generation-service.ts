@@ -42,6 +42,7 @@ export class OpenRouterImageGenerationError extends Error {
 
 type GenerateImageInput = {
   prompt: string;
+  aspectRatio?: string;
 };
 
 type GenerateImageResult = {
@@ -61,7 +62,11 @@ export async function generateImageWithOpenRouter(
 
   try {
     const completion = await runOpenRouterRequest(() =>
-      requestOpenRouterImageCompletion(config, input.prompt),
+      requestOpenRouterImageCompletion(
+        config,
+        input.prompt,
+        input.aspectRatio ?? config.aspectRatio,
+      ),
     );
     const dataUrl = completion.choices?.[0]?.message?.images?.[0]?.image_url?.url;
 
@@ -163,6 +168,7 @@ type OpenRouterImageResponse = {
 async function requestOpenRouterImageCompletion(
   config: OpenRouterImageConfig,
   prompt: string,
+  aspectRatio: string,
 ): Promise<OpenRouterImageResponse> {
   const initialModalities = resolveOpenRouterImageModalities(config.model);
   const controller = new AbortController();
@@ -177,6 +183,7 @@ async function requestOpenRouterImageCompletion(
         config,
         prompt,
         initialModalities,
+        aspectRatio,
         controller.signal,
       );
     } catch (error) {
@@ -187,6 +194,7 @@ async function requestOpenRouterImageCompletion(
           config,
           prompt,
           ["image"],
+          aspectRatio,
           controller.signal,
         );
       }
@@ -208,6 +216,7 @@ async function postOpenRouterImageCompletion(
   config: OpenRouterImageConfig,
   prompt: string,
   modalities: string[],
+  aspectRatio: string,
   signal: AbortSignal,
 ) {
   const response = await fetch(`${config.baseUrl}/chat/completions`, {
@@ -226,7 +235,7 @@ async function postOpenRouterImageCompletion(
       ],
       modalities,
       image_config: {
-        aspect_ratio: config.aspectRatio,
+        aspect_ratio: aspectRatio,
       },
     }),
     signal,

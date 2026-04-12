@@ -115,3 +115,101 @@ test("buildGenerateErrorMessage suggests single-platform generation after timeou
   assert.match(message, /超时/);
   assert.match(message, /单平台/);
 });
+
+test("buildGenerateErrorMessage gives a rewrite-specific fallback message for upstream failures", () => {
+  const message = buildGenerateErrorMessage(
+    new GenerateRequestError(
+      "generation_failed",
+      "Unexpected upstream failure",
+    ),
+    ["wechat_article"],
+    { hasRewriteSource: true },
+  );
+
+  assert.match(message, /仿写生成失败/);
+  assert.match(message, /原文较长/);
+});
+
+test("buildGenerateErrorMessage gives a fetch-failed specific message for rewrite failures", () => {
+  const message = buildGenerateErrorMessage(
+    new GenerateRequestError(
+      "generation_failed",
+      "fetch failed",
+    ),
+    ["wechat_article"],
+    { hasRewriteSource: true },
+  );
+
+  assert.match(message, /连接不稳定|上游/);
+  assert.doesNotMatch(message, /原文较长/);
+});
+
+test("buildGenerateErrorMessage gives a structured-output specific message for rewrite failures", () => {
+  const message = buildGenerateErrorMessage(
+    new GenerateRequestError(
+      "generation_failed",
+      "Unexpected token 'p', ... is not valid JSON",
+    ),
+    ["wechat_article"],
+    { hasRewriteSource: true },
+  );
+
+  assert.match(message, /格式不稳定|结构/);
+  assert.doesNotMatch(message, /原文较长/);
+});
+
+test("requestGeneratedDraft includes rewriteSource when provided", async () => {
+  let receivedBody: unknown;
+
+  await requestGeneratedDraft(
+    async (_input, init) => {
+      receivedBody = JSON.parse(String(init?.body ?? "{}"));
+
+      return new Response(
+        JSON.stringify({
+          draft: {
+            autoTitle: "测试标题",
+            content: {},
+            generatedPlatforms: [],
+            mockPlatforms: [],
+            generationInfo: {
+              generatorVersion: "phase3-rewrite-v1",
+              modelProvider: "openrouter",
+              modelName: "openai/gpt-5-nano",
+            },
+          },
+          promptSettings: [],
+        }),
+        {
+          status: 200,
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    },
+    {
+      userPrompt: "请仿写成更口语化的版本",
+      selectedPlatforms: ["wechat_article"],
+      rewriteSource: {
+        kind: "uploaded_file",
+        sourceName: "source.md",
+        mimeType: "text/markdown",
+        extractedText: "原文第一段\n\n原文第二段",
+        charCount: 12,
+      },
+    },
+  );
+
+  assert.deepEqual(receivedBody, {
+    userPrompt: "请仿写成更口语化的版本",
+    selectedPlatforms: ["wechat_article"],
+    rewriteSource: {
+      kind: "uploaded_file",
+      sourceName: "source.md",
+      mimeType: "text/markdown",
+      extractedText: "原文第一段\n\n原文第二段",
+      charCount: 12,
+    },
+  });
+});

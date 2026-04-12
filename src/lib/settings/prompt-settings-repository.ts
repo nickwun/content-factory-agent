@@ -139,9 +139,13 @@ export function ensurePromptSettingsTable(
 
 function mapRow(row: PromptSettingRow): PlatformPromptSetting {
   return {
+    id: `prompt-setting-${row.platform}`,
     platform: row.platform,
+    name: "默认",
     promptTemplate: row.prompt_template,
     defaultTemplate: row.default_template,
+    isDefault: true,
+    createdAt: row.updated_at,
     updatedAt: row.updated_at,
     version: row.version ?? undefined,
   };

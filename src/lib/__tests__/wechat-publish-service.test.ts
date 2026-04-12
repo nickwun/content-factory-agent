@@ -34,12 +34,49 @@ test("parseWechatPublishRequestPayload validates article publish request shape",
       platform: "wechat_article",
       recordId: "record-1",
       title: "高效工作的 5 个方法",
+      markdownBody: "## 标题\n\n正文内容",
       blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
     },
   });
 
   assert.equal(parsed.publishType, "article");
   assert.equal(parsed.snapshot.platform, "wechat_article");
+  assert.equal(parsed.snapshot.markdownBody, "## 标题\n\n正文内容");
+  assert.equal(parsed.snapshot.blocks.length, 1);
+});
+
+test("parseWechatPublishRequestPayload accepts optional article cover image", () => {
+  const parsed = parseWechatPublishRequestPayload({
+    accountId: "account-1",
+    publishType: "article",
+    snapshot: {
+      schemaVersion: "v1",
+      platform: "wechat_article",
+      recordId: "record-1",
+      title: "高效工作的 5 个方法",
+      coverImageUrl: "/api/generated-images/cover.jpg",
+      markdownBody: "正文内容",
+      blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
+    },
+  });
+
+  assert.equal(parsed.snapshot.coverImageUrl, "/api/generated-images/cover.jpg");
+});
+
+test("parseWechatPublishRequestPayload accepts legacy blocks-only snapshots", () => {
+  const parsed = parseWechatPublishRequestPayload({
+    accountId: "account-1",
+    publishType: "article",
+    snapshot: {
+      schemaVersion: "v1",
+      platform: "wechat_article",
+      recordId: "record-1",
+      title: "高效工作的 5 个方法",
+      blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
+    },
+  });
+
+  assert.equal(parsed.snapshot.markdownBody, undefined);
   assert.equal(parsed.snapshot.blocks.length, 1);
 });
 

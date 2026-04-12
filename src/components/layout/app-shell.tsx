@@ -1,11 +1,17 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
+export const APP_SHELL_NAV_BUTTON_CLASS =
+  "inline-flex h-14 min-w-[128px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-black/10 bg-white/75 px-6 text-[15px] font-medium text-slate-700 transition hover:border-slate-300";
+
+export const APP_SHELL_NAV_BUTTON_DISABLED_CLASS =
+  `${APP_SHELL_NAV_BUTTON_CLASS} cursor-not-allowed opacity-45 hover:border-black/10`;
+
 type AppShellProps = {
   currentPath: "/" | "/settings";
   actions?: ReactNode;
   rightNavLabel?: string;
-  rightNavHref?: "/" | "/settings";
+  rightNavHref?: string;
   children: ReactNode;
 };
 
@@ -44,11 +50,7 @@ export function AppShell({
           {actions}
           <Link
             href={navHref}
-            className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-              currentPath === "/settings"
-                ? "border-black/10 bg-white/75 text-slate-700 hover:border-slate-300"
-                : "border-black/10 bg-white/75 text-slate-700 hover:border-slate-300"
-            }`}
+            className={APP_SHELL_NAV_BUTTON_CLASS}
           >
             {navLabel}
           </Link>

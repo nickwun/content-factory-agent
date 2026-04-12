@@ -1,6 +1,7 @@
 import type { PlatformContentMap } from "../types/history";
 import type { PlatformType } from "../types/platform";
 import type { GenerationContext } from "./generation-context";
+import { serializeWechatBlocksToMarkdown } from "../workspace/wechat-markdown.ts";
 
 export type MockGeneratedDraft = {
   autoTitle: string;
@@ -53,53 +54,59 @@ function getAutoTitle(userPrompt: string) {
 }
 
 function buildWechatArticle(title: string, promptHint: string) {
+  const blocks = [
+    {
+      id: "wechat-heading-1",
+      type: "heading" as const,
+      level: 2 as const,
+      text: "为什么多数人越努力，反而越忙",
+    },
+    {
+      id: "wechat-paragraph-1",
+      type: "paragraph" as const,
+      text: "真正的效率，不是把一天塞满，而是让重要的事情持续产出。**高效工作**背后往往不是技巧堆砌，而是更清晰的判断与更稳定的系统。",
+    },
+    {
+      id: "wechat-list-1",
+      type: "list" as const,
+      items: [
+        "先区分重要与紧急",
+        "把注意力交给少数关键任务",
+        "减少切换成本",
+        "让流程可复用",
+        "用复盘持续修正系统",
+      ],
+    },
+    {
+      id: "wechat-quote-1",
+      type: "quote" as const,
+      text: "效率的本质，不是做得更快，而是做得更对。",
+    },
+    {
+      id: "wechat-divider-1",
+      type: "divider" as const,
+    },
+    {
+      id: "wechat-heading-2",
+      type: "heading" as const,
+      level: 3 as const,
+      text: "把高效变成长期能力",
+    },
+    {
+      id: "wechat-paragraph-2",
+      type: "paragraph" as const,
+      text: `当任务选择、执行节奏和反馈机制形成闭环，效率才会从偶尔爆发，变成稳定的工作方式。当前生成偏好强调：${promptHint}。`,
+    },
+  ];
+
   return {
     platform: "wechat_article" as const,
     title,
-    blocks: [
-      {
-        id: "wechat-heading-1",
-        type: "heading" as const,
-        level: 2 as const,
-        text: "为什么多数人越努力，反而越忙",
-      },
-      {
-        id: "wechat-paragraph-1",
-        type: "paragraph" as const,
-        text: "真正的效率，不是把一天塞满，而是让重要的事情持续产出。**高效工作**背后往往不是技巧堆砌，而是更清晰的判断与更稳定的系统。",
-      },
-      {
-        id: "wechat-list-1",
-        type: "list" as const,
-        items: [
-          "先区分重要与紧急",
-          "把注意力交给少数关键任务",
-          "减少切换成本",
-          "让流程可复用",
-          "用复盘持续修正系统",
-        ],
-      },
-      {
-        id: "wechat-quote-1",
-        type: "quote" as const,
-        text: "效率的本质，不是做得更快，而是做得更对。",
-      },
-      {
-        id: "wechat-divider-1",
-        type: "divider" as const,
-      },
-      {
-        id: "wechat-heading-2",
-        type: "heading" as const,
-        level: 3 as const,
-        text: "把高效变成长期能力",
-      },
-      {
-        id: "wechat-paragraph-2",
-        type: "paragraph" as const,
-        text: `当任务选择、执行节奏和反馈机制形成闭环，效率才会从偶尔爆发，变成稳定的工作方式。当前生成偏好强调：${promptHint}。`,
-      },
-    ],
+    markdownBody: serializeWechatBlocksToMarkdown(blocks),
+    coverImage: {
+      status: "idle" as const,
+    },
+    blocks,
   };
 }
 

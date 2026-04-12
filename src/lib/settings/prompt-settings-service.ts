@@ -3,28 +3,76 @@ import {
   getDefaultPromptSetting,
   getDefaultPromptSettings,
 } from "../generation/default-prompts.ts";
-import type { PlatformPromptSetting } from "./prompt-settings-types.ts";
+import type {
+  PlatformPromptPresetGroup,
+  PlatformPromptSetting,
+  PromptPresetIdByPlatform,
+} from "./prompt-settings-types.ts";
+import { createPromptPresetService } from "./prompt-preset-service.ts";
 
-type PromptSettingsRepository = {
-  list(platforms?: PlatformType[]): PlatformPromptSetting[];
-  update(platform: PlatformType, promptTemplate: string): PlatformPromptSetting;
-  reset(platform: PlatformType): PlatformPromptSetting;
-};
+type PromptPresetRepository = Parameters<typeof createPromptPresetService>[0];
 
-export function createPromptSettingsService(
-  repository: PromptSettingsRepository,
-) {
+export { PromptPresetError } from "./prompt-preset-service.ts";
+
+export function createPromptSettingsService(repository: PromptPresetRepository) {
+  const presetService = createPromptPresetService(repository);
+
   return {
-    listPromptSettings(platforms?: PlatformType[]) {
-      return repository.list(platforms);
+    listPromptSettings(
+      platforms?: PlatformType[],
+      selectedPresetIds?: PromptPresetIdByPlatform,
+    ): PlatformPromptSetting[] {
+      if (!platforms || platforms.length === 0) {
+        return presetService
+          .listPromptPresetGroups()
+          .flatMap((group) =>
+            group.presets.filter((preset) => preset.isDefault),
+          );
+      }
+
+      return presetService.resolvePromptSettings(platforms, selectedPresetIds);
+    },
+
+    listPromptPresetGroups(platforms?: PlatformType[]): PlatformPromptPresetGroup[] {
+      return presetService.listPromptPresetGroups(platforms);
+    },
+
+    createPromptPreset(input: {
+      platform: PlatformType;
+      name: string;
+      promptTemplate: string;
+    }) {
+      return presetService.createPromptPreset(input);
+    },
+
+    updatePromptPreset(
+      id: string,
+      input: {
+        name?: string;
+        promptTemplate?: string;
+      },
+    ) {
+      return presetService.updatePromptPreset(id, input);
+    },
+
+    duplicatePromptPreset(id: string) {
+      return presetService.duplicatePromptPreset(id);
+    },
+
+    deletePromptPreset(id: string) {
+      return presetService.deletePromptPreset(id);
+    },
+
+    setDefaultPromptPreset(id: string) {
+      return presetService.setDefaultPromptPreset(id);
     },
 
     updatePromptSetting(platform: PlatformType, promptTemplate: string) {
-      return repository.update(platform, promptTemplate);
+      return presetService.updateDefaultPromptSetting(platform, promptTemplate);
     },
 
     resetPromptSetting(platform: PlatformType) {
-      return repository.reset(platform);
+      return presetService.resetDefaultPromptSetting(platform);
     },
   };
 }
@@ -39,5 +87,5 @@ export function getDefaultPromptTemplates() {
 }
 
 export function getDefaultPromptTemplate(platform: PlatformType) {
-  return getDefaultPromptSetting(platform);
+  return getDefaultPromptSetting(platform).promptTemplate;
 }

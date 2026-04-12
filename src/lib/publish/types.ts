@@ -30,6 +30,8 @@ export type WechatPublishSnapshot = {
   platform: "wechat_article";
   recordId: string;
   title: string;
+  markdownBody?: string;
+  coverImageUrl?: string;
   blocks: WechatBlock[];
   relatedXiaohongshu?: {
     title: string;

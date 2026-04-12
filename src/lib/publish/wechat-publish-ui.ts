@@ -1,4 +1,5 @@
 import type { HistoryRecord } from "../types/history.ts";
+import { resolveWechatCoverImage } from "../workspace/wechat-cover-image.ts";
 import type { WechatPublishAccount, WechatPublishSnapshot } from "./types.ts";
 
 export function createWechatPublishSnapshot(
@@ -10,6 +11,7 @@ export function createWechatPublishSnapshot(
     throw new Error("Missing wechat article content");
   }
 
+  const resolvedCoverImage = resolveWechatCoverImage(article.coverImage);
   const relatedXiaohongshu = record.content.xiaohongshu
     ? {
         title: record.content.xiaohongshu.title,
@@ -27,6 +29,10 @@ export function createWechatPublishSnapshot(
     platform: "wechat_article",
     recordId: record.id,
     title: article.title,
+    markdownBody: article.markdownBody,
+    ...(resolvedCoverImage.imageUrl
+      ? { coverImageUrl: resolvedCoverImage.imageUrl }
+      : {}),
     blocks: article.blocks,
     relatedXiaohongshu,
   };
@@ -47,9 +53,14 @@ export function buildWechatPublishPreviewChecks(record: HistoryRecord) {
       passed: Boolean(article?.title.trim()),
     },
     {
-      id: "blocks_exists",
-      label: "正文内容块非空",
-      passed: Boolean(article && article.blocks.length > 0),
+      id: "content_exists",
+      label: "正文内容非空",
+      passed: Boolean(
+        article &&
+          ((typeof article.markdownBody === "string" &&
+            article.markdownBody.trim().length > 0) ||
+            article.blocks.length > 0),
+      ),
     },
   ];
 

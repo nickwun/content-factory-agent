@@ -22,6 +22,16 @@ export type OpenRouterImageConfig = {
   reviewModel: string;
 };
 
+export type OpenRouterLongformConfig = {
+  apiKey: string;
+  baseUrl: string;
+  briefModel: string;
+  finalModel: string;
+};
+
+export const DEFAULT_LONGFORM_BRIEF_MODEL = "google/gemini-2.5-flash-lite";
+export const DEFAULT_LONGFORM_FINAL_MODEL = "google/gemini-2.5-flash";
+
 export function getOpenRouterConfig(): OpenRouterConfig {
   const apiKey = process.env.OPENROUTER_API_KEY?.trim();
   const baseUrl = process.env.OPENROUTER_BASE_URL?.trim();
@@ -70,5 +80,30 @@ export function getOpenRouterImageConfig(): OpenRouterImageConfig {
     model: model!,
     aspectRatio,
     reviewModel,
+  };
+}
+
+export function getOpenRouterLongformConfig(): OpenRouterLongformConfig {
+  const apiKey = process.env.OPENROUTER_API_KEY?.trim();
+  const baseUrl = process.env.OPENROUTER_BASE_URL?.trim();
+  const briefModel =
+    process.env.LONGFORM_BRIEF_MODEL?.trim() || DEFAULT_LONGFORM_BRIEF_MODEL;
+  const finalModel =
+    process.env.LONGFORM_FINAL_MODEL?.trim() || DEFAULT_LONGFORM_FINAL_MODEL;
+
+  const missingKeys = [
+    !apiKey ? "OPENROUTER_API_KEY" : null,
+    !baseUrl ? "OPENROUTER_BASE_URL" : null,
+  ].filter(Boolean) as string[];
+
+  if (missingKeys.length > 0) {
+    throw new MissingOpenRouterConfigError(missingKeys);
+  }
+
+  return {
+    apiKey: apiKey!,
+    baseUrl: baseUrl!,
+    briefModel,
+    finalModel,
   };
 }

@@ -9,6 +9,10 @@ import {
   ensurePromptSettingsTable,
 } from "../settings/prompt-settings-repository.ts";
 import {
+  createPromptPresetRepository,
+  ensurePromptPresetsTable,
+} from "../settings/prompt-preset-repository.ts";
+import {
   createPromptSettingsService,
   getDefaultPromptTemplates,
 } from "../settings/prompt-settings-service.ts";
@@ -24,8 +28,10 @@ afterEach(() => {
 
 test("prompt settings service lists all settings and filters selected platforms", () => {
   const db = createTempDb();
-  const repository = createPromptSettingsRepository(db);
   ensurePromptSettingsTable(db, getDefaultPromptTemplates());
+  const legacyRepository = createPromptSettingsRepository(db);
+  ensurePromptPresetsTable(db, legacyRepository.list());
+  const repository = createPromptPresetRepository(db);
   const service = createPromptSettingsService(repository);
 
   const allSettings = service.listPromptSettings();
@@ -40,8 +46,10 @@ test("prompt settings service lists all settings and filters selected platforms"
 
 test("prompt settings service updates and resets a single platform", () => {
   const db = createTempDb();
-  const repository = createPromptSettingsRepository(db);
   ensurePromptSettingsTable(db, getDefaultPromptTemplates());
+  const legacyRepository = createPromptSettingsRepository(db);
+  ensurePromptPresetsTable(db, legacyRepository.list());
+  const repository = createPromptPresetRepository(db);
   const service = createPromptSettingsService(repository);
 
   const updated = service.updatePromptSetting("twitter", "new twitter prompt");

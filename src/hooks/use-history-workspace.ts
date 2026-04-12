@@ -17,6 +17,10 @@ type UseHistoryWorkspaceOptions = {
   autosaveDelay?: number;
 };
 
+type CreateRecordOptions = {
+  activate?: boolean;
+};
+
 export function useHistoryWorkspace(
   options: UseHistoryWorkspaceOptions = {},
 ) {
@@ -73,10 +77,12 @@ export function useHistoryWorkspace(
   }, []);
 
   const createRecord = useCallback(
-    async (record: HistoryRecord) => {
+    async (record: HistoryRecord, options: CreateRecordOptions = {}) => {
       await adapter.create(record);
       replaceRecord(record);
-      setActiveRecordId(record.id);
+      if (options.activate !== false) {
+        setActiveRecordId(record.id);
+      }
       setSaveState("saved");
       setPendingSaveRecord(null);
     },

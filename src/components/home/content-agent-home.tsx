@@ -1,8 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import { AppShell } from "@/components/layout/app-shell";
+import {
+  APP_SHELL_NAV_BUTTON_CLASS,
+  APP_SHELL_NAV_BUTTON_DISABLED_CLASS,
+  AppShell,
+} from "@/components/layout/app-shell";
+import { ArticleSourcePanel } from "@/components/home/article-source-panel";
+import { BatchRewritePanel } from "@/components/home/batch-rewrite-panel";
+import { PromptPresetSelector } from "@/components/home/prompt-preset-selector";
 import { PublishQrDialog } from "@/components/publish/publish-qr-dialog";
 import { WechatPublishDialog } from "@/components/publish/wechat-publish-dialog";
 import { XiaohongshuPublishDialog } from "@/components/publish/xiaohongshu-publish-dialog";
@@ -16,6 +24,11 @@ import {
   requestGeneratedImage,
 } from "@/lib/generation/generate-image-client";
 import {
+  buildGenerateWechatCoverErrorMessage,
+  GenerateWechatCoverRequestError,
+  requestGeneratedWechatCover,
+} from "@/lib/generation/generate-wechat-cover-client";
+import {
   buildGenerateErrorMessage,
   GenerateRequestError,
   getGeneratePendingMessage,
@@ -23,7 +36,41 @@ import {
 } from "@/lib/generation/generate-client";
 import type { DraftGenerationInfo, GeneratedDraftResult } from "@/lib/generation/generation-service";
 import type { XiaohongshuPublishResponse } from "@/lib/publish/types";
+import {
+  buildGenerateRequestPayload,
+  buildRewriteSourceErrorMessage,
+  buildRewriteSourceNotice,
+} from "@/lib/rewrite/article-source-ui";
+import { buildWechatFinalizationOptions } from "@/lib/generation/wechat-finalization";
+import {
+  buildBatchRewriteSelectionMessage,
+  createBatchRewriteFailedItem,
+  createBatchRewriteReadyItem,
+  planBatchRewriteFileSelection,
+  resolveSelectedPlatformsForRewriteMode,
+  type BatchRewriteFileLike,
+  type BatchRewriteItem,
+  type RewriteComposerMode,
+} from "@/lib/rewrite/batch-rewrite";
+import {
+  buildBatchRewriteProgress,
+  getNextBatchRewriteReadyItem,
+  markBatchRewriteGenerating,
+  markBatchRewriteRunFailed,
+  markBatchRewriteRunSucceeded,
+} from "@/lib/rewrite/batch-rewrite-run";
+import { parseRewriteFile } from "@/lib/rewrite/rewrite-file-parser";
+import {
+  buildRewriteSource,
+  MAX_REWRITE_SOURCE_CHARS,
+  type RewriteSource,
+} from "@/lib/rewrite/rewrite-source";
 import type { PlatformPromptSetting } from "@/lib/settings/prompt-settings-types";
+import type {
+  PlatformPromptPresetGroup,
+  PromptPresetIdByPlatform,
+} from "@/lib/settings/prompt-settings-types";
+import { buildSelectedPromptPresetByPlatform } from "@/lib/settings/prompt-preset-selection";
 import type { HistoryRecord } from "@/lib/types/history";
 import type { PlatformType } from "@/lib/types/platform";
 import {
@@ -32,8 +79,14 @@ import {
   startXiaohongshuImageGeneration,
 } from "@/lib/workspace/xiaohongshu-images";
 import {
+  failWechatCoverImageGeneration,
+  finishWechatCoverImageGeneration,
+  startWechatCoverImageGeneration,
+} from "@/lib/workspace/wechat-cover-image-workflow";
+import {
   resolveHomeScreenMode,
   resolveMobileHistoryPanelState,
+  resolveRequestedHomeScreenMode,
 } from "@/lib/workspace/workspace-state";
 import { getWorkspaceStatusLabel } from "@/lib/workspace/workspace-status";
 import { useHistoryWorkspace } from "@/hooks/use-history-workspace";
@@ -52,7 +105,16 @@ const PLATFORM_LABELS: Record<PlatformType, string> = {
   video_script: "视频脚本",
 };
 
-export function ContentAgentHome() {
+type ContentAgentHomeProps = {
+  initialPromptPresetGroups: PlatformPromptPresetGroup[];
+  initialRequestedHomeScreenMode?: string;
+};
+
+export function ContentAgentHome({
+  initialPromptPresetGroups,
+  initialRequestedHomeScreenMode,
+}: ContentAgentHomeProps) {
+  const router = useRouter();
   const {
     loaded,
     records,
@@ -76,11 +138,35 @@ export function ContentAgentHome() {
   );
   const [composerPinned, setComposerPinned] = useState(false);
   const [userPrompt, setUserPrompt] = useState("");
+  const [rewriteComposerMode, setRewriteComposerMode] =
+    useState<RewriteComposerMode>("single");
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformType[]>([]);
+  const [promptPresetGroups, setPromptPresetGroups] = useState(
+    initialPromptPresetGroups,
+  );
+  const [selectedPromptPresetByPlatform, setSelectedPromptPresetByPlatform] =
+    useState<PromptPresetIdByPlatform>({});
+  const [rewriteSource, setRewriteSource] = useState<RewriteSource | null>(null);
+  const [articleSourceMode, setArticleSourceMode] = useState<
+    "idle" | "paste" | "upload"
+  >("idle");
+  const [pastedSourceText, setPastedSourceText] = useState("");
+  const [rewriteSourceError, setRewriteSourceError] = useState<string | null>(null);
+  const [rewriteSourceNotice, setRewriteSourceNotice] = useState<string | null>(null);
+  const [isParsingRewriteFile, setIsParsingRewriteFile] = useState(false);
+  const [batchRewriteItems, setBatchRewriteItems] = useState<BatchRewriteItem[]>([]);
+  const [batchRewriteSelectionMessage, setBatchRewriteSelectionMessage] =
+    useState<string | null>(null);
+  const [isParsingBatchFiles, setIsParsingBatchFiles] = useState(false);
+  const [batchGenerateState, setBatchGenerateState] = useState<
+    "idle" | "running" | "completed"
+  >("idle");
   const [generateState, setGenerateState] = useState<
     "idle" | "generating" | "error"
   >("idle");
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
+  const [wechatFinalizationEnabled, setWechatFinalizationEnabled] =
+    useState(false);
   const [editingRecordId, setEditingRecordId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
@@ -94,6 +180,56 @@ export function ContentAgentHome() {
     "closed" | "open"
   >("closed");
   const editorFocusRef = useRef<HTMLDivElement | null>(null);
+  const rewriteFileInputRef = useRef<HTMLInputElement | null>(null);
+  const batchRewriteFileInputRef = useRef<HTMLInputElement | null>(null);
+  const batchRewriteItemsRef = useRef<BatchRewriteItem[]>([]);
+  const requestedHomeScreenMode = resolveRequestedHomeScreenMode(
+    initialRequestedHomeScreenMode,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function refreshPromptPresetGroups() {
+      try {
+        const response = await fetch("/api/prompt-presets");
+        if (!response.ok) {
+          return;
+        }
+
+        const data = (await response.json()) as {
+          presetGroups: PlatformPromptPresetGroup[];
+        };
+
+        if (!cancelled) {
+          setPromptPresetGroups(data.presetGroups);
+        }
+      } catch {
+        // Keep the initial snapshot if refresh fails.
+      }
+    }
+
+    void refreshPromptPresetGroups();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!requestedHomeScreenMode) {
+      return;
+    }
+
+    if (requestedHomeScreenMode === "composer") {
+      setComposerPinned(true);
+      setScreenMode("composer");
+      return;
+    }
+
+    setComposerPinned(false);
+    setScreenMode("workspace");
+  }, [requestedHomeScreenMode]);
 
   const hasHistory = records.length > 0;
   const resolvedScreenMode = resolveHomeScreenMode({
@@ -104,6 +240,23 @@ export function ContentAgentHome() {
   });
   const shouldShowWorkspace =
     resolvedScreenMode === "workspace" && Boolean(activeRecord && loaded);
+  const composerSelectedPlatforms = resolveSelectedPlatformsForRewriteMode(
+    rewriteComposerMode,
+    selectedPlatforms,
+  );
+  const isBatchComposerMode = rewriteComposerMode === "batch";
+  const wechatFinalization =
+    composerSelectedPlatforms.includes("wechat_article")
+      ? buildWechatFinalizationOptions(wechatFinalizationEnabled)
+      : undefined;
+  const executableBatchItems = batchRewriteItems.filter(
+    (item) => item.parseStatus === "ready",
+  );
+  const batchProgress = buildBatchRewriteProgress(executableBatchItems);
+
+  useEffect(() => {
+    batchRewriteItemsRef.current = batchRewriteItems;
+  }, [batchRewriteItems]);
 
   const activePlatform = activeRecord?.workspace.activePlatform;
 
@@ -132,7 +285,24 @@ export function ContentAgentHome() {
   }, [toast]);
 
   async function handleGenerate() {
-    if (!userPrompt.trim() || selectedPlatforms.length === 0) {
+    if (isBatchComposerMode) {
+      await handleBatchGenerate();
+      return;
+    }
+
+    if (!userPrompt.trim() || composerSelectedPlatforms.length === 0) {
+      return;
+    }
+
+    const resolvedPromptPresetSelection = buildSelectedPromptPresetByPlatform({
+      selectedPlatforms: composerSelectedPlatforms,
+      presetGroups: promptPresetGroups,
+      selectedPresetIds: selectedPromptPresetByPlatform,
+    });
+
+    if (!resolvedPromptPresetSelection.ok) {
+      setGenerateState("error");
+      setGenerateMessage(resolvedPromptPresetSelection.errorMessage);
       return;
     }
 
@@ -140,10 +310,17 @@ export function ContentAgentHome() {
     setGenerateMessage(null);
 
     try {
-      const data = (await requestGeneratedDraft(fetch, {
-        userPrompt,
-        selectedPlatforms,
-      })) as {
+      const data = (await requestGeneratedDraft(
+        fetch,
+        buildGenerateRequestPayload({
+          userPrompt,
+          selectedPlatforms: composerSelectedPlatforms,
+          ...(rewriteSource ? { rewriteSource } : {}),
+          selectedPromptPresetByPlatform:
+            resolvedPromptPresetSelection.selectedPromptPresetByPlatform,
+          ...(wechatFinalization ? { wechatFinalization } : {}),
+        }),
+      )) as {
         draft: GeneratedDraftResult;
         promptSettings: PlatformPromptSetting[];
       };
@@ -151,17 +328,20 @@ export function ContentAgentHome() {
       const now = new Date().toISOString();
       const nextRecord = createHistoryRecord({
         userPrompt,
-        selectedPlatforms,
+        selectedPlatforms: composerSelectedPlatforms,
         now,
         autoTitle: data.draft.autoTitle,
         content: data.draft.content,
         promptSettings: data.promptSettings,
         generationInfo: data.draft.generationInfo,
+        rewriteSource,
       });
 
       await createRecord(nextRecord);
       setComposerPinned(false);
       setScreenMode("workspace");
+      router.replace("/?view=workspace");
+      resetRewriteSourceState();
       setGenerateState("idle");
       setGenerateMessage(null);
       setToast(
@@ -174,9 +354,337 @@ export function ContentAgentHome() {
       setGenerateState("error");
       setGenerateMessage(
         error instanceof GenerateRequestError
-          ? buildGenerateErrorMessage(error, selectedPlatforms)
+          ? buildGenerateErrorMessage(error, composerSelectedPlatforms, {
+              hasRewriteSource: Boolean(rewriteSource),
+            })
           : "本次生成失败，请稍后重试。",
       );
+    }
+  }
+
+  async function handleBatchGenerate() {
+    if (!userPrompt.trim()) {
+      setGenerateState("error");
+      setGenerateMessage("先输入这一批素材共用的仿写要求。");
+      return;
+    }
+
+    if (executableBatchItems.length === 0) {
+      setGenerateState("error");
+      setGenerateMessage("先至少准备 1 篇可解析的素材，再开始批量仿写。");
+      return;
+    }
+
+    const resolvedPromptPresetSelection = buildSelectedPromptPresetByPlatform({
+      selectedPlatforms: composerSelectedPlatforms,
+      presetGroups: promptPresetGroups,
+      selectedPresetIds: selectedPromptPresetByPlatform,
+    });
+
+    if (!resolvedPromptPresetSelection.ok) {
+      setGenerateState("error");
+      setGenerateMessage(resolvedPromptPresetSelection.errorMessage);
+      return;
+    }
+
+    setGenerateState("idle");
+    setGenerateMessage(null);
+    setBatchGenerateState("running");
+
+    let succeededCount = 0;
+    let failedCount = 0;
+
+    for (;;) {
+      const nextItem = getNextBatchRewriteReadyItem(batchRewriteItemsRef.current);
+      if (!nextItem || !nextItem.rewriteSource) {
+        break;
+      }
+
+      setBatchRewriteItems((current) =>
+        markBatchRewriteGenerating(current, nextItem.id),
+      );
+
+      try {
+        const data = (await requestGeneratedDraft(
+          fetch,
+          buildGenerateRequestPayload({
+            userPrompt,
+            selectedPlatforms: composerSelectedPlatforms,
+            rewriteSource: nextItem.rewriteSource,
+            selectedPromptPresetByPlatform:
+              resolvedPromptPresetSelection.selectedPromptPresetByPlatform,
+            ...(wechatFinalization ? { wechatFinalization } : {}),
+          }),
+        )) as {
+          draft: GeneratedDraftResult;
+          promptSettings: PlatformPromptSetting[];
+        };
+
+        const now = new Date().toISOString();
+        const nextRecord = createHistoryRecord({
+          userPrompt,
+          selectedPlatforms: composerSelectedPlatforms,
+          now,
+          autoTitle: data.draft.autoTitle,
+          content: data.draft.content,
+          promptSettings: data.promptSettings,
+          generationInfo: data.draft.generationInfo,
+          rewriteSource: nextItem.rewriteSource,
+        });
+
+        await createRecord(nextRecord, { activate: false });
+        succeededCount += 1;
+        setBatchRewriteItems((current) =>
+          markBatchRewriteRunSucceeded(current, {
+            itemId: nextItem.id,
+            recordId: nextRecord.id,
+            recordTitle: nextRecord.title,
+          }),
+        );
+      } catch (error) {
+        failedCount += 1;
+        const message =
+          error instanceof GenerateRequestError
+            ? buildGenerateErrorMessage(error, composerSelectedPlatforms, {
+                hasRewriteSource: true,
+              })
+            : "本篇仿写失败，请稍后重试。";
+
+        setBatchRewriteItems((current) =>
+          markBatchRewriteRunFailed(current, {
+            itemId: nextItem.id,
+            errorMessage: message,
+          }),
+        );
+      }
+    }
+
+    setBatchGenerateState("completed");
+    setToast(
+      failedCount > 0
+        ? `批量仿写完成：成功 ${succeededCount} 篇，失败 ${failedCount} 篇。`
+        : `批量仿写完成：成功生成 ${succeededCount} 篇公众号草稿。`,
+    );
+  }
+
+  async function handleGenerateWechatCoverImage() {
+    if (
+      !activeRecord ||
+      activePlatform !== "wechat_article" ||
+      currentPlatformContent?.platform !== "wechat_article"
+    ) {
+      return;
+    }
+
+    updateActiveContent((current) => {
+      const article = current.wechat_article;
+
+      if (!article) {
+        return current;
+      }
+
+      return {
+        ...current,
+        wechat_article: startWechatCoverImageGeneration(article),
+      };
+    });
+
+    try {
+      const result = await requestGeneratedWechatCover(fetch, {
+        articleTitle: currentPlatformContent.title,
+        articleBlocks: currentPlatformContent.blocks,
+      });
+
+      updateActiveContent((current) => {
+        const article = current.wechat_article;
+
+        if (!article) {
+          return current;
+        }
+
+        return {
+          ...current,
+          wechat_article: finishWechatCoverImageGeneration(
+            article,
+            result.image,
+          ),
+        };
+      });
+      setToast("公众号头图已生成");
+    } catch (error) {
+      const errorMessage =
+        error instanceof GenerateWechatCoverRequestError
+          ? buildGenerateWechatCoverErrorMessage(error)
+          : "公众号头图生成失败，请稍后重试。";
+
+      updateActiveContent((current) => {
+        const article = current.wechat_article;
+
+        if (!article) {
+          return current;
+        }
+
+        return {
+          ...current,
+          wechat_article: failWechatCoverImageGeneration(article, {
+            error: errorMessage,
+          }),
+        };
+      });
+      setToast(errorMessage);
+    }
+  }
+
+  function handleArticleSourceModeChange(mode: "paste" | "upload") {
+    setArticleSourceMode(mode);
+    setRewriteSourceError(null);
+    setRewriteSourceNotice(null);
+  }
+
+  function handleApplyPastedSource() {
+    try {
+      const nextSource = buildRewriteSource({
+        kind: "pasted_text",
+        extractedText: pastedSourceText,
+        maxChars: MAX_REWRITE_SOURCE_CHARS,
+      });
+
+      setRewriteSource(nextSource);
+      setRewriteSourceNotice(buildRewriteSourceNotice(nextSource));
+      setRewriteSourceError(null);
+      setArticleSourceMode("idle");
+      setPastedSourceText("");
+    } catch (error) {
+      setRewriteSource(null);
+      setRewriteSourceNotice(null);
+      setRewriteSourceError(buildRewriteSourceErrorMessage(error));
+    }
+  }
+
+  async function handleRewriteFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    setIsParsingRewriteFile(true);
+    setRewriteSourceError(null);
+    setRewriteSourceNotice(null);
+
+    try {
+      const nextSource = await parseRewriteFile(file, {
+        maxChars: MAX_REWRITE_SOURCE_CHARS,
+      });
+
+      setRewriteSource(nextSource);
+      setRewriteSourceNotice(buildRewriteSourceNotice(nextSource));
+      setArticleSourceMode("idle");
+      setPastedSourceText("");
+    } catch (error) {
+      setRewriteSource(null);
+      setRewriteSourceNotice(null);
+      setRewriteSourceError(buildRewriteSourceErrorMessage(error));
+    } finally {
+      setIsParsingRewriteFile(false);
+      event.target.value = "";
+    }
+  }
+
+  async function handleBatchRewriteFilesChange(
+    event: ChangeEvent<HTMLInputElement>,
+  ) {
+    const incomingFiles = Array.from(
+      event.target.files ?? [],
+    ) as BatchRewriteFileLike[];
+
+    if (incomingFiles.length === 0) {
+      return;
+    }
+
+    const selection = planBatchRewriteFileSelection({
+      existingItems: batchRewriteItems,
+      incomingFiles,
+    });
+    setBatchRewriteSelectionMessage(
+      buildBatchRewriteSelectionMessage(selection.rejectedFiles),
+    );
+
+    if (selection.acceptedFiles.length === 0) {
+      event.target.value = "";
+      return;
+    }
+
+    setIsParsingBatchFiles(true);
+
+    const nextItems: BatchRewriteItem[] = [];
+
+    try {
+      for (const file of selection.acceptedFiles) {
+        try {
+          const nextSource = await parseRewriteFile(file, {
+            maxChars: MAX_REWRITE_SOURCE_CHARS,
+          });
+          nextItems.push(createBatchRewriteReadyItem(file, nextSource));
+        } catch (error) {
+          nextItems.push(
+            createBatchRewriteFailedItem(
+              file,
+              buildRewriteSourceErrorMessage(error),
+            ),
+          );
+        }
+      }
+    } finally {
+      setIsParsingBatchFiles(false);
+      event.target.value = "";
+    }
+
+    setBatchRewriteItems((current) => [...current, ...nextItems]);
+  }
+
+  function handleReplaceRewriteSource() {
+    const nextMode = rewriteSource?.kind === "uploaded_file" ? "upload" : "paste";
+    setRewriteSource(null);
+    setRewriteSourceError(null);
+    setRewriteSourceNotice(null);
+    setArticleSourceMode(nextMode);
+  }
+
+  function clearRewriteSource() {
+    resetRewriteSourceState();
+  }
+
+  function removeBatchRewriteItem(itemId: string) {
+    setBatchRewriteItems((current) =>
+      current.filter((item) => item.id !== itemId),
+    );
+    setBatchRewriteSelectionMessage(null);
+  }
+
+  function openBatchRewriteResult(recordId: string) {
+    setComposerPinned(false);
+    selectRecord(recordId);
+    setScreenMode("workspace");
+    router.replace("/?view=workspace");
+  }
+
+  function resetRewriteSourceState() {
+    setRewriteSource(null);
+    setArticleSourceMode("idle");
+    setPastedSourceText("");
+    setRewriteSourceError(null);
+    setRewriteSourceNotice(null);
+    if (rewriteFileInputRef.current) {
+      rewriteFileInputRef.current.value = "";
+    }
+  }
+
+  function resetBatchRewriteState() {
+    setBatchRewriteItems([]);
+    setBatchRewriteSelectionMessage(null);
+    if (batchRewriteFileInputRef.current) {
+      batchRewriteFileInputRef.current.value = "";
     }
   }
 
@@ -325,10 +833,29 @@ export function ContentAgentHome() {
     setComposerPinned(true);
     setScreenMode("composer");
     setUserPrompt("");
+    setRewriteComposerMode("single");
     setSelectedPlatforms([]);
+    setSelectedPromptPresetByPlatform({});
+    resetRewriteSourceState();
+    resetBatchRewriteState();
     setGenerateState("idle");
     setGenerateMessage(null);
     resetRenameState();
+  }
+
+  function openComposerPage() {
+    startNewDraft();
+    router.push("/?view=composer");
+  }
+
+  function openWorkspacePage() {
+    if (!activeRecord) {
+      return;
+    }
+
+    setComposerPinned(false);
+    setScreenMode("workspace");
+    router.push("/?view=workspace");
   }
 
   function startRename(recordId: string, title: string) {
@@ -359,6 +886,7 @@ export function ContentAgentHome() {
     setComposerPinned(false);
     selectRecord(recordId);
     setScreenMode("workspace");
+    router.replace("/?view=workspace");
     setMobileHistoryPanelState((current) =>
       resolveMobileHistoryPanelState(current, "select_record"),
     );
@@ -535,12 +1063,29 @@ export function ContentAgentHome() {
         shouldShowWorkspace ? (
           <button
             type="button"
-            onClick={startNewDraft}
-            className="rounded-full border border-black/10 bg-white/75 px-4 py-2 text-sm font-medium text-slate-700 transition hover:border-slate-300"
+            onClick={openComposerPage}
+            className={APP_SHELL_NAV_BUTTON_CLASS}
           >
             新建内容
           </button>
-        ) : null
+        ) : activeRecord ? (
+          <button
+            type="button"
+            onClick={openWorkspacePage}
+            className={APP_SHELL_NAV_BUTTON_CLASS}
+          >
+            文章编辑
+          </button>
+        ) : (
+          <button
+            type="button"
+            disabled
+            className={APP_SHELL_NAV_BUTTON_DISABLED_CLASS}
+            title="暂无可编辑文章"
+          >
+            文章编辑
+          </button>
+        )
       }
     >
       {toast ? (
@@ -580,11 +1125,10 @@ export function ContentAgentHome() {
                 Phase 1 Prototype
               </p>
               <h1 className="mt-3 max-w-3xl text-[2.6rem] font-semibold tracking-tight text-slate-900 md:text-[3rem] md:leading-[1.1]">
-                一次输入，生成四种平台内容草稿
+                先仿写，再进入多平台工作区继续编辑
               </h1>
               <p className="mt-4 max-w-2xl text-[15px] leading-8 text-slate-600">
-                把你想写的主题、目标受众、风格和用途告诉系统，再选择目标平台，
-                它会为你生成可继续编辑的多平台草稿。
+                现在首页的主任务已经切到仿写优先。你可以先上传或粘贴原文，再按平台和风格预设生成可继续编辑的草稿。
               </p>
 
               <div className="mt-8 space-y-5">
@@ -595,26 +1139,126 @@ export function ContentAgentHome() {
                         Step 1
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                        输入你的创作需求
+                        上传原文或直接粘贴，优先走仿写主链路
                       </h2>
                     </div>
                     <p className="text-sm leading-7 text-slate-400">
-                      主题、受众、风格、用途都可以直接写进需求里
+                      有原文时，这里是仿写主区；没原文时，仍可按普通生成继续工作。
                     </p>
                   </div>
 
-                  <p className="mt-3 text-sm leading-7 text-slate-500">
-                    可以直接写一句需求，也可以补充平台语气、适用场景和期望长度。
-                  </p>
+                  <div className="mt-5 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={batchGenerateState === "running"}
+                      onClick={() => setRewriteComposerMode("single")}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        rewriteComposerMode === "single"
+                          ? "bg-slate-900 text-white"
+                          : "border border-black/10 bg-white text-slate-600"
+                      }`}
+                    >
+                      单篇仿写
+                    </button>
+                    <button
+                      type="button"
+                      disabled={batchGenerateState === "running"}
+                      onClick={() => setRewriteComposerMode("batch")}
+                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                        rewriteComposerMode === "batch"
+                          ? "bg-slate-900 text-white"
+                          : "border border-black/10 bg-white text-slate-600"
+                      }`}
+                    >
+                      批量仿写
+                    </button>
+                  </div>
 
-                  <textarea
-                    value={userPrompt}
-                    onChange={(event) => setUserPrompt(event.target.value)}
-                    placeholder={
-                      "例如：写一篇关于如何提高工作效率的内容，面向 25-35 岁职场人，语气专业但不生硬，同时生成公众号长文、小红书笔记和 Twitter thread。"
-                    }
-                    className="mt-4 min-h-64 w-full resize-y rounded-[30px] border border-slate-200 bg-white px-6 py-5 text-lg leading-8 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] placeholder:text-slate-300 focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-                  />
+                  {isBatchComposerMode ? (
+                    <>
+                      <p className="mt-3 text-sm leading-7 text-slate-500">
+                        批量模式第一版固定为“多篇素材到多篇公众号仿写”。当前先完成素材准备层，不会一次性切到多平台。
+                      </p>
+                      <BatchRewritePanel
+                        items={batchRewriteItems}
+                        isParsingFiles={isParsingBatchFiles}
+                        isRunning={batchGenerateState === "running"}
+                        message={batchRewriteSelectionMessage}
+                        onBrowseFiles={() =>
+                          batchRewriteFileInputRef.current?.click()
+                        }
+                        onRemoveItem={removeBatchRewriteItem}
+                        onOpenResult={openBatchRewriteResult}
+                      />
+                      <input
+                        ref={batchRewriteFileInputRef}
+                        type="file"
+                        multiple
+                        accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(event) => {
+                          void handleBatchRewriteFilesChange(event);
+                        }}
+                        className="hidden"
+                      />
+                    </>
+                  ) : (
+                    <>
+                      <p className="mt-3 text-sm leading-7 text-slate-500">
+                        先加载原文，再写仿写要求会更高效。若不提供原文，下面的需求也会继续作为普通创作需求生效。
+                      </p>
+
+                      <ArticleSourcePanel
+                        source={rewriteSource}
+                        mode={articleSourceMode}
+                        pasteText={pastedSourceText}
+                        isParsingFile={isParsingRewriteFile}
+                        errorMessage={rewriteSourceError}
+                        noticeMessage={rewriteSourceNotice}
+                        onModeChange={handleArticleSourceModeChange}
+                        onPasteTextChange={setPastedSourceText}
+                        onApplyPaste={handleApplyPastedSource}
+                        onBrowseFile={() => rewriteFileInputRef.current?.click()}
+                        onReplace={handleReplaceRewriteSource}
+                        onClear={clearRewriteSource}
+                      />
+                      <input
+                        ref={rewriteFileInputRef}
+                        type="file"
+                        accept=".txt,.md,.docx,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        onChange={(event) => {
+                          void handleRewriteFileChange(event);
+                        }}
+                        className="hidden"
+                      />
+                    </>
+                  )}
+
+                  <div className="mt-5 rounded-[24px] border border-black/8 bg-white/92 p-4">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                          仿写要求 / 创作需求
+                        </p>
+                        <p className="mt-2 text-sm leading-7 text-slate-500">
+                          有原文时，这里写改写方向和风格要求；没有原文时，这里就是普通生成的需求描述。
+                        </p>
+                      </div>
+                    </div>
+
+                    <textarea
+                      value={userPrompt}
+                      disabled={batchGenerateState === "running"}
+                      onChange={(event) => setUserPrompt(event.target.value)}
+                      placeholder={
+                        isBatchComposerMode
+                          ? "例如：把这一批素材都仿写成克制理性的公众号长文，结构完整、标题稳重，不要写成短促爆文。"
+                          : rewriteSource
+                          ? "例如：仿写成一篇关于写作延缓衰老的公众号长文，结构完整但表达更克制理性。"
+                          : "例如：写一篇关于如何提高工作效率的内容，面向 25-35 岁职场人，语气专业但不生硬，同时生成公众号长文和小红书笔记。"
+                      }
+                      className="mt-4 min-h-56 w-full resize-y rounded-[28px] border border-slate-200 bg-white px-6 py-5 text-lg leading-8 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] placeholder:text-slate-300 focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                    />
+                  </div>
                 </div>
 
                 <div className="rounded-[34px] border border-slate-200 bg-white/94 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
@@ -624,49 +1268,105 @@ export function ContentAgentHome() {
                         Step 2
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                        选择要生成的平台
+                        选择输出平台和当前风格预设
                       </h2>
                     </div>
                     <p className="text-sm leading-7 text-slate-500">
-                      可多选，系统会同时生成对应平台草稿。
+                      先选平台，再为当前已选平台指定要使用的提示词预设。
                     </p>
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    {PLATFORM_OPTIONS.map((platform) => {
-                      const selected = selectedPlatforms.includes(platform.value);
+                  {isBatchComposerMode ? (
+                    <div className="mt-4 rounded-[24px] border border-slate-900 bg-slate-900 px-4 py-4 text-sm font-medium text-white shadow-[0_18px_36px_rgba(15,23,42,0.22)]">
+                      批量模式第一版固定生成公众号文章
+                    </div>
+                  ) : (
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {PLATFORM_OPTIONS.map((platform) => {
+                        const selected = selectedPlatforms.includes(platform.value);
 
-                      return (
-                        <button
-                          key={platform.value}
-                          type="button"
-                          onClick={() =>
-                            setSelectedPlatforms((current) =>
-                              current.includes(platform.value)
-                                ? current.filter((item) => item !== platform.value)
-                                : [...current, platform.value],
-                            )
-                          }
-                          className={`flex items-center justify-between rounded-[24px] border px-4 py-4 text-left text-sm font-medium transition ${
-                            selected
-                              ? "border-slate-900 bg-slate-900 text-white shadow-[0_18px_36px_rgba(15,23,42,0.22)]"
-                              : "border-black/10 bg-stone-50 text-slate-700 hover:border-slate-300 hover:bg-white"
-                          }`}
-                        >
-                          <span>{platform.label}</span>
-                          <span
-                            className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                        return (
+                          <button
+                            key={platform.value}
+                            type="button"
+                            onClick={() =>
+                              setSelectedPlatforms((current) =>
+                                current.includes(platform.value)
+                                  ? current.filter((item) => item !== platform.value)
+                                  : [...current, platform.value],
+                              )
+                            }
+                            className={`flex items-center justify-between rounded-[24px] border px-4 py-4 text-left text-sm font-medium transition ${
                               selected
-                                ? "bg-white/18 text-white"
-                                : "border border-black/10 bg-white text-slate-400"
+                                ? "border-slate-900 bg-slate-900 text-white shadow-[0_18px_36px_rgba(15,23,42,0.22)]"
+                                : "border-black/10 bg-stone-50 text-slate-700 hover:border-slate-300 hover:bg-white"
                             }`}
                           >
-                            {selected ? "已选" : "+"}
+                            <span>{platform.label}</span>
+                            <span
+                              className={`inline-flex h-6 min-w-6 items-center justify-center rounded-full text-xs font-semibold ${
+                                selected
+                                  ? "bg-white/18 text-white"
+                                  : "border border-black/10 bg-white text-slate-400"
+                              }`}
+                            >
+                              {selected ? "已选" : "+"}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <PromptPresetSelector
+                    selectedPlatforms={composerSelectedPlatforms}
+                    presetGroups={promptPresetGroups}
+                    selectedPresetIds={selectedPromptPresetByPlatform}
+                    disabled={batchGenerateState === "running"}
+                    onChange={(platform, presetId) =>
+                      setSelectedPromptPresetByPlatform((current) => ({
+                        ...current,
+                        [platform]: presetId,
+                      }))
+                    }
+                  />
+
+                  {composerSelectedPlatforms.includes("wechat_article") ? (
+                    <div className="mt-4 rounded-[24px] border border-black/8 bg-white/92 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                            公众号成稿模式
+                          </p>
+                          <p className="mt-2 text-sm leading-7 text-slate-500">
+                            开启后会在公众号初稿生成后，按系统默认规则进入一次成稿整理。当前内部目标区间为正文 1100-1200 字，用于更保守地收束段落和章节结构。
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setWechatFinalizationEnabled((current) => !current)
+                          }
+                          disabled={batchGenerateState === "running"}
+                          className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
+                            wechatFinalizationEnabled
+                              ? "bg-slate-900 text-white"
+                              : "border border-black/10 bg-white text-slate-600"
+                          } ${
+                            batchGenerateState === "running"
+                              ? "cursor-not-allowed opacity-60"
+                              : ""
+                          }`}
+                        >
+                          <span>公众号成稿模式</span>
+                          <span className="rounded-full bg-white/15 px-2 py-0.5 text-xs font-semibold text-inherit">
+                            {wechatFinalizationEnabled ? "开" : "关"}
                           </span>
                         </button>
-                      );
-                    })}
-                  </div>
+                      </div>
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="rounded-[34px] border border-slate-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(244,240,233,0.96))] p-5 text-slate-900 shadow-[0_18px_42px_rgba(15,23,42,0.05)]">
@@ -676,10 +1376,10 @@ export function ContentAgentHome() {
                         Step 3
                       </p>
                       <h2 className="mt-2 text-xl font-semibold">
-                        生成多平台内容草稿
+                        生成内容并进入工作区继续编辑
                       </h2>
                       <p className="mt-2 text-sm leading-7 text-slate-500">
-                        满足条件后，系统会立即进入双栏工作区，并把本次生成保存进草稿箱。
+                        这是次级区：如果没有加载原文，也会继续按普通生成逻辑工作，不会把首页变成只能仿写。
                       </p>
                     </div>
 
@@ -689,18 +1389,28 @@ export function ContentAgentHome() {
                         onClick={handleGenerate}
                         disabled={
                           !userPrompt.trim() ||
-                          selectedPlatforms.length === 0 ||
-                          generateState === "generating"
+                          composerSelectedPlatforms.length === 0 ||
+                          (isBatchComposerMode
+                            ? executableBatchItems.length === 0 ||
+                              batchGenerateState === "running"
+                            : generateState === "generating")
                         }
                         className={`inline-flex items-center justify-center rounded-full px-6 py-3.5 text-base font-semibold transition ${
                           !userPrompt.trim() ||
-                          selectedPlatforms.length === 0 ||
-                          generateState === "generating"
+                          composerSelectedPlatforms.length === 0 ||
+                          (isBatchComposerMode
+                            ? executableBatchItems.length === 0 ||
+                              batchGenerateState === "running"
+                            : generateState === "generating")
                             ? "cursor-not-allowed border border-slate-200 bg-stone-200 text-slate-400"
                             : "bg-slate-900 text-white shadow-[0_14px_30px_rgba(15,23,42,0.18)] hover:bg-slate-800"
                         }`}
                       >
-                        {generateState === "generating"
+                        {isBatchComposerMode
+                          ? batchGenerateState === "running"
+                            ? "批量生成中..."
+                            : "开始批量仿写"
+                          : generateState === "generating"
                           ? "生成中..."
                           : "生成内容"}
                       </button>
@@ -711,12 +1421,19 @@ export function ContentAgentHome() {
                             : "text-slate-500"
                         }`}
                       >
-                        {generateState === "error"
+                        {isBatchComposerMode
+                          ? batchGenerateState === "running"
+                            ? `正在顺序生成第 ${batchProgress.currentIndex ?? 1} 篇 / 共 ${batchProgress.total} 篇：${batchProgress.activeFileName ?? "当前素材"}。已成功 ${batchProgress.successCount} 篇，已失败 ${batchProgress.failedCount} 篇。`
+                            : batchGenerateState === "completed"
+                              ? `本批次执行完成。成功 ${batchProgress.successCount} 篇，失败 ${batchProgress.failedCount} 篇。成功结果已进入现有工作台历史记录。`
+                              : "当前阶段已接入顺序逐篇执行。开始后会锁定本批次素材、preset 和仿写要求，按公众号单篇链路逐篇生成。"
+                          : generateState === "error"
                           ? generateMessage
                           : generateState === "generating"
-                            ? getGeneratePendingMessage(selectedPlatforms)
-                          : userPrompt.trim() && selectedPlatforms.length > 0
-                            ? getGeneratePendingMessage(selectedPlatforms)
+                            ? getGeneratePendingMessage(composerSelectedPlatforms)
+                          : userPrompt.trim() &&
+                              composerSelectedPlatforms.length > 0
+                            ? getGeneratePendingMessage(composerSelectedPlatforms)
                             : !userPrompt.trim()
                               ? "先输入需求内容"
                               : "再至少选择一个平台即可生成"}
@@ -937,6 +1654,8 @@ export function ContentAgentHome() {
                   currentPlatformContent?.platform === "wechat_article" ? (
                     <WechatEditor
                       content={currentPlatformContent}
+                      generation={activeRecord?.generation}
+                      onGenerateCoverImage={handleGenerateWechatCoverImage}
                       onChange={(content) =>
                         updateActiveContent((current) => ({
                           ...current,
@@ -1003,6 +1722,7 @@ function createHistoryRecord(input: {
   content: HistoryRecord["content"];
   promptSettings: PlatformPromptSetting[];
   generationInfo: DraftGenerationInfo;
+  rewriteSource?: RewriteSource | null;
 }): HistoryRecord {
   const settingsByPlatform = Object.fromEntries(
     input.promptSettings.map((setting) => [setting.platform, setting]),
@@ -1023,12 +1743,65 @@ function createHistoryRecord(input: {
       modelProvider: input.generationInfo.modelProvider,
       modelName: input.generationInfo.modelName,
       generatedAt: input.now,
+      hasRewriteSource: Boolean(input.rewriteSource),
+      ...(input.rewriteSource
+        ? {
+            rewriteSourceKind: input.rewriteSource.kind,
+            rewriteSourceName: input.rewriteSource.sourceName,
+            rewriteSourceCharCount: input.rewriteSource.charCount,
+            rewriteSourceTruncated: input.rewriteSource.truncated === true,
+          }
+        : {}),
+      ...(input.generationInfo.rewriteMode
+        ? {
+            rewriteMode: input.generationInfo.rewriteMode,
+            usedLongformRewrite: input.generationInfo.usedLongformRewrite === true,
+            ...(typeof input.generationInfo.rewriteChunkCount === "number"
+              ? { rewriteChunkCount: input.generationInfo.rewriteChunkCount }
+              : {}),
+            ...(input.generationInfo.rewriteBriefVersion
+              ? { rewriteBriefVersion: input.generationInfo.rewriteBriefVersion }
+              : {}),
+          }
+        : {}),
+      ...(typeof input.generationInfo.wechatFinalizationEnabled === "boolean"
+        ? {
+            wechatFinalizationEnabled:
+              input.generationInfo.wechatFinalizationEnabled,
+            wechatFinalizationApplied:
+              input.generationInfo.wechatFinalizationApplied === true,
+            ...(typeof input.generationInfo.wechatFinalizationTargetMinWords ===
+            "number"
+              ? {
+                  wechatFinalizationTargetMinWords:
+                    input.generationInfo.wechatFinalizationTargetMinWords,
+                }
+              : {}),
+            ...(typeof input.generationInfo.wechatFinalizationTargetMaxWords ===
+            "number"
+              ? {
+                  wechatFinalizationTargetMaxWords:
+                    input.generationInfo.wechatFinalizationTargetMaxWords,
+                }
+              : {}),
+          }
+        : {}),
       selectedPlatformsSnapshot: input.selectedPlatforms,
       promptSnapshotByPlatform: Object.fromEntries(
         input.selectedPlatforms.map((platform) => [
           platform,
           settingsByPlatform[platform]?.promptTemplate ?? "",
         ]),
+      ),
+      promptPresetIdByPlatform: Object.fromEntries(
+        input.selectedPlatforms
+          .filter((platform) => settingsByPlatform[platform]?.id)
+          .map((platform) => [platform, settingsByPlatform[platform]?.id]),
+      ),
+      promptPresetNameByPlatform: Object.fromEntries(
+        input.selectedPlatforms
+          .filter((platform) => settingsByPlatform[platform]?.name)
+          .map((platform) => [platform, settingsByPlatform[platform]?.name]),
       ),
       settingsVersionByPlatform: Object.fromEntries(
         input.selectedPlatforms

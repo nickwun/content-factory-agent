@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   MissingOpenRouterConfigError,
   getOpenRouterImageConfig,
+  getOpenRouterLongformConfig,
   getOpenRouterConfig,
 } from "../env/openrouter.ts";
 
@@ -65,6 +66,52 @@ test("getOpenRouterImageConfig defaults aspect ratio to 4:5", () => {
   );
 });
 
+test("getOpenRouterLongformConfig defaults brief and final models", () => {
+  const previousApiKey = process.env.OPENROUTER_API_KEY;
+  const previousBaseUrl = process.env.OPENROUTER_BASE_URL;
+  const previousBriefModel = process.env.LONGFORM_BRIEF_MODEL;
+  const previousFinalModel = process.env.LONGFORM_FINAL_MODEL;
+
+  process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+  delete process.env.LONGFORM_BRIEF_MODEL;
+  delete process.env.LONGFORM_FINAL_MODEL;
+
+  const config = getOpenRouterLongformConfig();
+  assert.equal(config.briefModel, "google/gemini-2.5-flash-lite");
+  assert.equal(config.finalModel, "google/gemini-2.5-flash");
+
+  restoreLongformEnv(
+    previousApiKey,
+    previousBaseUrl,
+    previousBriefModel,
+    previousFinalModel,
+  );
+});
+
+test("getOpenRouterLongformConfig reads explicit longform model overrides", () => {
+  const previousApiKey = process.env.OPENROUTER_API_KEY;
+  const previousBaseUrl = process.env.OPENROUTER_BASE_URL;
+  const previousBriefModel = process.env.LONGFORM_BRIEF_MODEL;
+  const previousFinalModel = process.env.LONGFORM_FINAL_MODEL;
+
+  process.env.OPENROUTER_API_KEY = "test-key";
+  process.env.OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
+  process.env.LONGFORM_BRIEF_MODEL = "google/gemini-2.5-flash-lite-preview";
+  process.env.LONGFORM_FINAL_MODEL = "qwen/qwen3-235b-a22b-2507";
+
+  const config = getOpenRouterLongformConfig();
+  assert.equal(config.briefModel, "google/gemini-2.5-flash-lite-preview");
+  assert.equal(config.finalModel, "qwen/qwen3-235b-a22b-2507");
+
+  restoreLongformEnv(
+    previousApiKey,
+    previousBaseUrl,
+    previousBriefModel,
+    previousFinalModel,
+  );
+});
+
 function restoreEnv(
   apiKey: string | undefined,
   baseUrl: string | undefined,
@@ -117,5 +164,36 @@ function restoreImageEnv(
     delete process.env.OPENROUTER_IMAGE_ASPECT_RATIO;
   } else {
     process.env.OPENROUTER_IMAGE_ASPECT_RATIO = aspectRatio;
+  }
+}
+
+function restoreLongformEnv(
+  apiKey: string | undefined,
+  baseUrl: string | undefined,
+  briefModel: string | undefined,
+  finalModel: string | undefined,
+) {
+  if (apiKey === undefined) {
+    delete process.env.OPENROUTER_API_KEY;
+  } else {
+    process.env.OPENROUTER_API_KEY = apiKey;
+  }
+
+  if (baseUrl === undefined) {
+    delete process.env.OPENROUTER_BASE_URL;
+  } else {
+    process.env.OPENROUTER_BASE_URL = baseUrl;
+  }
+
+  if (briefModel === undefined) {
+    delete process.env.LONGFORM_BRIEF_MODEL;
+  } else {
+    process.env.LONGFORM_BRIEF_MODEL = briefModel;
+  }
+
+  if (finalModel === undefined) {
+    delete process.env.LONGFORM_FINAL_MODEL;
+  } else {
+    process.env.LONGFORM_FINAL_MODEL = finalModel;
   }
 }

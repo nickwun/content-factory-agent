@@ -5,6 +5,7 @@ import {
   getVisibleSaveState,
   resolveMobileHistoryPanelState,
   resolveHomeScreenMode,
+  resolveRequestedHomeScreenMode,
 } from "../workspace/workspace-state.ts";
 
 test("resolveHomeScreenMode keeps composer open when user explicitly starts a new draft", () => {
@@ -63,4 +64,15 @@ test("resolveMobileHistoryPanelState closes after a record is selected", () => {
 
 test("resolveMobileHistoryPanelState falls back to closed when workspace context disappears", () => {
   assert.equal(resolveMobileHistoryPanelState("open", "no_active_record"), "closed");
+});
+
+test("resolveRequestedHomeScreenMode accepts supported query values", () => {
+  assert.equal(resolveRequestedHomeScreenMode("composer"), "composer");
+  assert.equal(resolveRequestedHomeScreenMode("workspace"), "workspace");
+});
+
+test("resolveRequestedHomeScreenMode ignores unsupported query values", () => {
+  assert.equal(resolveRequestedHomeScreenMode("other"), null);
+  assert.equal(resolveRequestedHomeScreenMode(""), null);
+  assert.equal(resolveRequestedHomeScreenMode(undefined), null);
 });

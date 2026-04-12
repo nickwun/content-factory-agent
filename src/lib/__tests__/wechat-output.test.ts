@@ -31,8 +31,57 @@ test("normalizeWechatArticleOutput falls back when title and blocks are empty", 
   } satisfies RawWechatArticleOutput);
 
   assert.equal(normalized.title, "未命名公众号草稿");
+  assert.equal(normalized.coverImage?.status, "idle");
+  assert.equal(normalized.markdownBody, "这是一篇新生成的公众号草稿，请继续完善具体内容。");
   assert.equal(normalized.blocks.length, 1);
   assert.equal(normalized.blocks[0]?.type, "paragraph");
+});
+
+test("normalizeWechatArticleOutput writes markdownBody alongside normalized blocks", () => {
+  const normalized = normalizeWechatArticleOutput({
+    title: "效率系统",
+    blocks: [
+      {
+        type: "heading",
+        level: 2,
+        text: "第一部分",
+      },
+      {
+        type: "paragraph",
+        text: "正文内容",
+      },
+      {
+        type: "quote",
+        text: "引用内容",
+      },
+      {
+        type: "list",
+        items: ["第一项", "第二项"],
+      },
+    ],
+  } satisfies RawWechatArticleOutput);
+
+  assert.equal(
+    normalized.markdownBody,
+    "## 第一部分\n\n正文内容\n\n> 引用内容\n\n- 第一项\n- 第二项",
+  );
+  assert.equal(normalized.blocks.length, 4);
+});
+
+test("normalizeWechatArticleOutput prefers markdownBody as the primary source and derives blocks", () => {
+  const normalized = normalizeWechatArticleOutput({
+    title: "Markdown 主输出",
+    markdownBody: "## 第一节\n\n正文第一段\n\n> 引用一段\n\n- 第一项\n- 第二项\n\n---\n\n收尾一段",
+  });
+
+  assert.equal(
+    normalized.markdownBody,
+    "## 第一节\n\n正文第一段\n\n> 引用一段\n\n- 第一项\n- 第二项\n\n---\n\n收尾一段",
+  );
+  assert.deepEqual(
+    normalized.blocks.map((block) => block.type),
+    ["heading", "paragraph", "quote", "list", "divider", "paragraph"],
+  );
 });
 
 test("normalizeWechatArticleOutput rejects malformed payloads", () => {
@@ -93,6 +142,28 @@ test("extractWechatArticleJsonPayload reads plain json text", () => {
 test("extractWechatArticleJsonPayload reads json wrapped in markdown fences", () => {
   const payload = extractWechatArticleJsonPayload(
     '```json\n{"title":"效率系统","blocks":[{"type":"paragraph","text":"正文"}]}\n```',
+  );
+
+  assert.deepEqual(payload, {
+    title: "效率系统",
+    blocks: [{ type: "paragraph", text: "正文" }],
+  });
+});
+
+test("extractWechatArticleJsonPayload repairs bareword block types in almost-json output", () => {
+  const payload = extractWechatArticleJsonPayload(
+    '{"title":"效率系统","blocks":[{"type": paragraph,"text":"正文"}]}',
+  );
+
+  assert.deepEqual(payload, {
+    title: "效率系统",
+    blocks: [{ type: "paragraph", text: "正文" }],
+  });
+});
+
+test("extractWechatArticleJsonPayload repairs trailing commas in almost-json output", () => {
+  const payload = extractWechatArticleJsonPayload(
+    '{"title":"效率系统","blocks":[{"type":"paragraph","text":"正文",},],}',
   );
 
   assert.deepEqual(payload, {

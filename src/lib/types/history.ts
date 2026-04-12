@@ -2,6 +2,8 @@ import type { PlatformType } from "./platform";
 
 export type PromptSettingsVersionMap = Partial<Record<PlatformType, string>>;
 export type PromptSnapshotMap = Partial<Record<PlatformType, string>>;
+export type PromptPresetIdMap = Partial<Record<PlatformType, string>>;
+export type PromptPresetNameMap = Partial<Record<PlatformType, string>>;
 
 export type WechatBlock =
   | {
@@ -28,7 +30,24 @@ export type WechatBlock =
 export type WechatArticleContent = {
   platform: "wechat_article";
   title: string;
+  markdownBody?: string;
   blocks: WechatBlock[];
+  coverImage?: WechatCoverImage;
+};
+
+export type WechatCoverImage = {
+  status: "idle" | "generating" | "generated" | "failed";
+  imageUrl?: string;
+  prompt?: string;
+  model?: string;
+  error?: string;
+  generatedAt?: string;
+  previousImage?: {
+    imageUrl: string;
+    prompt?: string;
+    model?: string;
+    generatedAt?: string;
+  };
 };
 
 export type XiaohongshuImageSuggestion = {
@@ -97,8 +116,23 @@ export type GenerationMetadata = {
   modelProvider: string;
   modelName: string;
   generatedAt: string;
+  hasRewriteSource?: boolean;
+  rewriteSourceKind?: "pasted_text" | "uploaded_file";
+  rewriteSourceName?: string;
+  rewriteSourceCharCount?: number;
+  rewriteSourceTruncated?: boolean;
+  rewriteMode?: "none" | "short_source" | "long_source";
+  usedLongformRewrite?: boolean;
+  rewriteChunkCount?: number;
+  rewriteBriefVersion?: string;
+  wechatFinalizationEnabled?: boolean;
+  wechatFinalizationApplied?: boolean;
+  wechatFinalizationTargetMinWords?: number;
+  wechatFinalizationTargetMaxWords?: number;
   selectedPlatformsSnapshot: PlatformType[];
   promptSnapshotByPlatform: PromptSnapshotMap;
+  promptPresetIdByPlatform?: PromptPresetIdMap;
+  promptPresetNameByPlatform?: PromptPresetNameMap;
   settingsVersionByPlatform?: PromptSettingsVersionMap;
 };
 

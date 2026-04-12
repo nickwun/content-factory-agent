@@ -1,10 +1,18 @@
 import type { GeneratedDraftResult } from "./generation-service.ts";
-import type { PlatformPromptSetting } from "../settings/prompt-settings-types.ts";
+import type { WechatFinalizationOptions } from "./wechat-finalization.ts";
+import type { RewriteSource } from "../rewrite/rewrite-source.ts";
+import type {
+  PlatformPromptSetting,
+  PromptPresetIdByPlatform,
+} from "../settings/prompt-settings-types.ts";
 import type { PlatformType } from "../types/platform.ts";
 
 type GenerateRequestPayload = {
   userPrompt: string;
   selectedPlatforms: PlatformType[];
+  rewriteSource?: RewriteSource;
+  selectedPromptPresetByPlatform?: PromptPresetIdByPlatform;
+  wechatFinalization?: WechatFinalizationOptions;
 };
 
 type GenerateRequestSuccess = {
@@ -13,6 +21,7 @@ type GenerateRequestSuccess = {
 };
 
 type GenerateErrorCode =
+  | "invalid_generate_request"
   | "missing_openrouter_config"
   | "generation_failed"
   | "generation_timeout";
@@ -110,6 +119,7 @@ export async function requestGeneratedDraft(
 export function buildGenerateErrorMessage(
   error: GenerateRequestError,
   selectedPlatforms: PlatformType[],
+  options: { hasRewriteSource?: boolean } = {},
 ) {
   const selectedRealPlatforms = selectedPlatforms.filter((platform) =>
     REAL_GENERATION_PLATFORMS.includes(platform),
@@ -127,7 +137,15 @@ export function buildGenerateErrorMessage(
     return "当前未配置 OpenRouter 环境变量，暂时无法生成所选平台内容。";
   }
 
+  if (error.code === "invalid_generate_request") {
+    return error.message || "本次生成请求无效，请检查原文和创作需求后重试。";
+  }
+
   if (error.code === "generation_timeout") {
+    if (options.hasRewriteSource) {
+      return "仿写生成超时，请稍后重试。若原文较长，建议先保留核心正文后再试。";
+    }
+
     return selectedRealPlatforms.length >= 2
       ? `生成请求超时。${formatPlatformNames(selectedRealPlatforms)} 同时走真实 AI 会更慢，建议先单平台生成。`
       : "生成请求超时，请稍后重试。";
@@ -139,6 +157,29 @@ export function buildGenerateErrorMessage(
     normalizedMessage.includes("authentication")
   ) {
     return "OpenRouter 鉴权失败，请检查 API Key 配置后重试。";
+  }
+
+  if (options.hasRewriteSource) {
+    if (normalizedMessage.includes("fetch failed")) {
+      return "仿写生成失败，上游模型连接不稳定，请稍后重试。";
+    }
+
+    if (
+      normalizedMessage.includes("not valid json") ||
+      normalizedMessage.includes("unexpected token") ||
+      normalizedMessage.includes("invalid wechat article output") ||
+      normalizedMessage.includes("invalid xiaohongshu") ||
+      normalizedMessage.includes("invalid twitter") ||
+      normalizedMessage.includes("invalid video script")
+    ) {
+      return "仿写生成失败，模型返回格式不稳定，请稍后重试。";
+    }
+
+    if (normalizedMessage.includes("did not contain meaningful content")) {
+      return "仿写生成失败，模型返回内容不完整，请稍后重试。";
+    }
+
+    return "仿写生成失败，请稍后重试。若原文较长，建议先保留核心正文后再试。";
   }
 
   return "本次生成失败，请稍后重试。";
@@ -181,6 +222,7 @@ async function parseGenerateErrorPayload(response: Response) {
 
 function isGenerateErrorCode(value: string | undefined): value is GenerateErrorCode {
   return (
+    value === "invalid_generate_request" ||
     value === "missing_openrouter_config" ||
     value === "generation_failed" ||
     value === "generation_timeout"

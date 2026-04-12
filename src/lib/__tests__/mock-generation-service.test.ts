@@ -47,6 +47,9 @@ test("generateMockDraft returns structured content for every selected platform",
 
   assert.equal(draft.autoTitle, "高效工作的 5 个底层逻辑");
   assert.ok(draft.content.wechat_article);
+  assert.equal(draft.content.wechat_article?.coverImage?.status, "idle");
+  assert.ok(draft.content.wechat_article?.markdownBody);
+  assert.match(draft.content.wechat_article?.markdownBody ?? "", /为什么多数人越努力/);
   assert.ok(draft.content.xiaohongshu);
   assert.ok(draft.content.twitter);
   assert.ok(draft.content.video_script);

@@ -1,7 +1,12 @@
 import type { WechatArticleContent, WechatBlock } from "../types/history.ts";
+import {
+  parseWechatMarkdownToBlocks,
+  serializeWechatBlocksToMarkdown,
+} from "../workspace/wechat-markdown.ts";
 
 export type RawWechatArticleOutput = {
   title?: unknown;
+  markdownBody?: unknown;
   blocks?: unknown;
 };
 
@@ -21,22 +26,36 @@ export function normalizeWechatArticleOutput(
     typeof source.title === "string" && source.title.trim()
       ? source.title.trim()
       : DEFAULT_TITLE;
+  const markdownBody =
+    typeof source.markdownBody === "string" && source.markdownBody.trim().length > 0
+      ? source.markdownBody.trim()
+      : null;
 
-  const blocks = normalizeBlocks(source.blocks);
+  const blocks =
+    markdownBody !== null
+      ? parseWechatMarkdownToBlocks(markdownBody)
+      : normalizeBlocks(source.blocks);
+  const normalizedBlocks =
+    blocks.length > 0
+      ? blocks
+      : [
+          {
+            id: crypto.randomUUID(),
+            type: "paragraph" as const,
+            text: DEFAULT_WECHAT_PLACEHOLDER,
+          },
+        ];
+  const normalizedMarkdownBody =
+    markdownBody ?? serializeWechatBlocksToMarkdown(normalizedBlocks);
 
   return {
     platform: "wechat_article",
     title,
-    blocks:
-      blocks.length > 0
-        ? blocks
-        : [
-            {
-              id: crypto.randomUUID(),
-              type: "paragraph",
-              text: DEFAULT_WECHAT_PLACEHOLDER,
-            },
-          ],
+    coverImage: {
+      status: "idle",
+    },
+    blocks: normalizedBlocks,
+    markdownBody: normalizedMarkdownBody,
   };
 }
 
@@ -153,7 +172,11 @@ export function extractWechatArticleJsonPayload(rawText: string) {
     throw new Error("Invalid wechat article output");
   }
 
-  return JSON.parse(jsonText);
+  try {
+    return JSON.parse(jsonText);
+  } catch {
+    return JSON.parse(repairLikelyWechatJson(jsonText));
+  }
 }
 
 function findFirstJsonObject(text: string) {
@@ -182,4 +205,13 @@ function findFirstJsonObject(text: string) {
   }
 
   return null;
+}
+
+function repairLikelyWechatJson(text: string) {
+  return text
+    .replace(
+      /("type"\s*:\s*)(paragraph|heading|quote|divider|list)(\s*[,}\]])/g,
+      '$1"$2"$3',
+    )
+    .replace(/,\s*([}\]])/g, "$1");
 }

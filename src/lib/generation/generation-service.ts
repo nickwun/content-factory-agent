@@ -8,11 +8,23 @@ import type {
 import type { PlatformType } from "../types/platform.ts";
 import type { GenerationContext } from "./generation-context.ts";
 import { generateMockDraft } from "./mock-generation-service.ts";
+import {
+  normalizeWechatArticleMarkdownBody,
+  parseWechatMarkdownToBlocks,
+} from "../workspace/wechat-markdown.ts";
 
 export type DraftGenerationInfo = {
   generatorVersion: string;
   modelProvider: string;
   modelName: string;
+  rewriteMode?: GenerationContext["rewriteMode"];
+  usedLongformRewrite?: boolean;
+  rewriteChunkCount?: number;
+  rewriteBriefVersion?: string;
+  wechatFinalizationEnabled?: boolean;
+  wechatFinalizationApplied?: boolean;
+  wechatFinalizationTargetMinWords?: number;
+  wechatFinalizationTargetMaxWords?: number;
 };
 
 export type GeneratedDraftResult = {
@@ -23,12 +35,17 @@ export type GeneratedDraftResult = {
   generationInfo: DraftGenerationInfo;
 };
 
+export type WechatArticleGenerationResult = {
+  article: WechatArticleContent;
+  finalizationApplied?: boolean;
+};
+
 type GenerateDraftDeps = {
   modelProvider: string;
   modelName: string;
   generateWechatArticle: (
     context: GenerationContext,
-  ) => Promise<WechatArticleContent>;
+  ) => Promise<WechatArticleContent | WechatArticleGenerationResult>;
   generateTwitterDraft: (
     context: GenerationContext,
   ) => Promise<TwitterContent>;
@@ -46,13 +63,16 @@ export async function generateDraft(
 ): Promise<GeneratedDraftResult> {
   const mockPlatforms: PlatformType[] = [];
   const content: PlatformContentMap = {};
+  let wechatFinalizationApplied = false;
 
   const realGenerationTasks: Array<Promise<void>> = [];
 
   if (context.selectedPlatforms.includes("wechat_article")) {
     realGenerationTasks.push(
-      deps.generateWechatArticle(context).then((wechatArticle) => {
-        content.wechat_article = wechatArticle;
+      deps.generateWechatArticle(context).then((wechatResult) => {
+        const normalized = normalizeWechatArticleGenerationResult(wechatResult);
+        content.wechat_article = normalized.article;
+        wechatFinalizationApplied = normalized.finalizationApplied;
       }),
     );
   }
@@ -131,6 +151,14 @@ export async function generateDraft(
         generatorVersion: "mock-v1",
         modelProvider: "mock",
         modelName: "mock-v1",
+        rewriteMode: context.rewriteMode,
+        usedLongformRewrite: context.rewriteMode === "long_source",
+        rewriteChunkCount: context.rewriteChunkCount,
+        rewriteBriefVersion: context.rewriteBrief?.version,
+        wechatFinalizationEnabled: context.wechatFinalization?.enabled === true,
+        wechatFinalizationApplied,
+        wechatFinalizationTargetMinWords: context.wechatFinalization?.targetMinWords,
+        wechatFinalizationTargetMaxWords: context.wechatFinalization?.targetMaxWords,
       },
     };
   }
@@ -144,7 +172,42 @@ export async function generateDraft(
       generatorVersion: context.generatorVersion,
       modelProvider: deps.modelProvider,
       modelName: deps.modelName,
+      rewriteMode: context.rewriteMode,
+      usedLongformRewrite: context.rewriteMode === "long_source",
+      rewriteChunkCount: context.rewriteChunkCount,
+      rewriteBriefVersion: context.rewriteBrief?.version,
+      wechatFinalizationEnabled: context.wechatFinalization?.enabled === true,
+      wechatFinalizationApplied,
+      wechatFinalizationTargetMinWords: context.wechatFinalization?.targetMinWords,
+      wechatFinalizationTargetMaxWords: context.wechatFinalization?.targetMaxWords,
     },
+  };
+}
+
+function normalizeWechatArticleGenerationResult(
+  value: WechatArticleContent | WechatArticleGenerationResult,
+): { article: WechatArticleContent; finalizationApplied: boolean } {
+  if ("platform" in value) {
+    return {
+      article: normalizeWechatArticleCompatibility(value),
+      finalizationApplied: false,
+    };
+  }
+
+  return {
+    article: normalizeWechatArticleCompatibility(value.article),
+    finalizationApplied: value.finalizationApplied === true,
+  };
+}
+
+function normalizeWechatArticleCompatibility(
+  article: WechatArticleContent,
+): WechatArticleContent {
+  const normalized = normalizeWechatArticleMarkdownBody(article);
+
+  return {
+    ...normalized,
+    blocks: parseWechatMarkdownToBlocks(normalized.markdownBody ?? ""),
   };
 }
 

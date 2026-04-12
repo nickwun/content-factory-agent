@@ -1,5 +1,5 @@
 import type { PlatformType } from "../types/platform";
-import type { PlatformPromptSetting } from "./generation-context";
+import type { PlatformPromptSetting } from "../settings/prompt-settings-types";
 
 const DEFAULT_PROMPT_TEMPLATES: Record<PlatformType, string> = {
   wechat_article:
@@ -16,9 +16,13 @@ export function getDefaultPromptSetting(
   platform: PlatformType,
 ): PlatformPromptSetting {
   return {
+    id: `default-prompt-${platform}`,
     platform,
+    name: "默认",
     promptTemplate: DEFAULT_PROMPT_TEMPLATES[platform],
     defaultTemplate: DEFAULT_PROMPT_TEMPLATES[platform],
+    isDefault: true,
+    createdAt: "2026-03-31T00:00:00.000Z",
     updatedAt: "2026-03-31T00:00:00.000Z",
   };
 }

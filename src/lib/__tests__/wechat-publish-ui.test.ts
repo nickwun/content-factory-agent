@@ -30,6 +30,11 @@ const record: HistoryRecord = {
     wechat_article: {
       platform: "wechat_article",
       title: "高效工作的 5 个方法",
+      markdownBody: "## 标题\n\n正文内容",
+      coverImage: {
+        status: "generated",
+        imageUrl: "/api/generated-images/cover.jpg",
+      },
       blocks: [{ id: "p1", type: "paragraph", text: "正文内容" }],
     },
   },
@@ -52,7 +57,9 @@ test("createWechatPublishSnapshot builds minimal snapshot from active record", (
 
   assert.equal(snapshot.platform, "wechat_article");
   assert.equal(snapshot.recordId, record.id);
+  assert.equal(snapshot.markdownBody, "## 标题\n\n正文内容");
   assert.equal(snapshot.blocks.length, 1);
+  assert.equal(snapshot.coverImageUrl, "/api/generated-images/cover.jpg");
 });
 
 test("getWechatPublishTypeAvailability reports why xiaolvshu is unavailable", () => {

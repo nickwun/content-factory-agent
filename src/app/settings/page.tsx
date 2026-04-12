@@ -1,15 +1,28 @@
-import { AppShell } from "@/components/layout/app-shell";
+import Link from "next/link";
+import {
+  APP_SHELL_NAV_BUTTON_CLASS,
+  AppShell,
+} from "@/components/layout/app-shell";
 import { PublishCredentialsPanel } from "@/components/settings/publish-credentials-panel";
 import { PromptSettingsScreen } from "@/components/settings/prompt-settings-screen";
 import { listPublishSettings } from "@/lib/settings/publish-settings-server";
-import { listPromptSettings } from "@/lib/settings/prompt-settings-server";
+import { listPromptPresetGroups } from "@/lib/settings/prompt-settings-server";
 
 export default function SettingsPage() {
-  const initialSettings = listPromptSettings();
+  const initialPresetGroups = listPromptPresetGroups();
   const initialPublishSettings = listPublishSettings();
 
   return (
-    <AppShell currentPath="/settings">
+    <AppShell
+      currentPath="/settings"
+      rightNavLabel="文章编辑"
+      rightNavHref="/?view=workspace"
+      actions={
+        <Link href="/?view=composer" className={APP_SHELL_NAV_BUTTON_CLASS}>
+          新建内容
+        </Link>
+      }
+    >
       <div className="mb-6">
         <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
           Settings
@@ -23,7 +36,7 @@ export default function SettingsPage() {
       </div>
 
       <div className="space-y-6">
-        <PromptSettingsScreen initialSettings={initialSettings} />
+        <PromptSettingsScreen initialPresetGroups={initialPresetGroups} />
         <PublishCredentialsPanel initialSettings={initialPublishSettings} />
       </div>
     </AppShell>

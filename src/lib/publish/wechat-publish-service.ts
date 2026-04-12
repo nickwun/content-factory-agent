@@ -73,7 +73,11 @@ export function parseWechatPublishRequestPayload(
     !snapshot.recordId?.trim() ||
     !snapshot.title?.trim() ||
     !Array.isArray(snapshot.blocks) ||
-    snapshot.blocks.length === 0
+    !(
+      (typeof snapshot.markdownBody === "string" &&
+        snapshot.markdownBody.trim().length > 0) ||
+      snapshot.blocks.length > 0
+    )
   ) {
     throw new PublishServiceError("validation_error", "公众号发布快照无效。", 400);
   }
@@ -125,6 +129,16 @@ export function parseWechatPublishRequestPayload(
       platform: "wechat_article",
       recordId: snapshot.recordId.trim(),
       title: snapshot.title.trim(),
+      markdownBody:
+        typeof snapshot.markdownBody === "string" &&
+        snapshot.markdownBody.trim()
+          ? snapshot.markdownBody
+          : undefined,
+      coverImageUrl:
+        typeof snapshot.coverImageUrl === "string" &&
+        snapshot.coverImageUrl.trim()
+          ? snapshot.coverImageUrl.trim()
+          : undefined,
       blocks: snapshot.blocks,
       relatedXiaohongshu,
     },

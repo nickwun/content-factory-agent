@@ -76,3 +76,13 @@ export function resolveMobileHistoryPanelState(
 
   return current;
 }
+
+export function resolveRequestedHomeScreenMode(
+  value: string | null | undefined,
+): HomeScreenMode | null {
+  if (value === "composer" || value === "workspace") {
+    return value;
+  }
+
+  return null;
+}

@@ -95,6 +95,7 @@ export async function fetchWechatPublishAccounts(
 export async function publishWechatArticle(
   credentials: WechatPublishCredentials,
   request: WechatPublishRequest,
+  baseOrigin: string,
   fetcher: typeof fetch = fetch,
 ): Promise<WechatPublishResponse> {
   const requestBody =
@@ -105,7 +106,7 @@ export async function publishWechatArticle(
         }
       : {
           wechatAppid: request.accountId,
-          ...mapWechatSnapshotToArticlePayload(request.snapshot),
+          ...mapWechatSnapshotToArticlePayload(request.snapshot, baseOrigin),
         };
 
   const response = await fetcher(
