@@ -33,3 +33,7 @@ export function rebuildTopicClusters() {
 export function rejectTopicCluster(id: string) {
   return getTopicClusterService().rejectTopicCluster(id);
 }
+
+export function reactivateTopicCluster(id: string) {
+  return getTopicClusterService().reactivateTopicCluster(id);
+}

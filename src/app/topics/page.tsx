@@ -2,8 +2,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { TopicOverviewScreen } from "@/components/topics/topic-overview-screen";
 import { getTopicCenterPageData } from "@/lib/topics/topic-center-page-data";
 
-export default function TopicsPage() {
-  const pageData = getTopicCenterPageData();
+export default async function TopicsPage() {
+  const pageData = await getTopicCenterPageData();
 
   return (
     <AppShell

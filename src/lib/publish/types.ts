@@ -110,6 +110,9 @@ export type FeishuPublishPayload = {
 export type FeishuDocxTextRun = {
   text_run: {
     content: string;
+    text_element_style?: {
+      bold?: boolean;
+    };
   };
 };
 

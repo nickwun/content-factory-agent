@@ -119,6 +119,7 @@ export function SourceAccountScreen({
   const [rewriteTaskError, setRewriteTaskError] = useState<string | null>(null);
   const [runningClusterId, setRunningClusterId] = useState<string | null>(null);
   const [rejectingClusterId, setRejectingClusterId] = useState<string | null>(null);
+  const [reactivatingClusterId, setReactivatingClusterId] = useState<string | null>(null);
   const [rowStatus, setRowStatus] = useState<Record<string, string>>({});
   const historyStorage = useMemo(() => createLocalHistoryStorage(), []);
 
@@ -598,6 +599,43 @@ export function SourceAccountScreen({
       setClusterActionError(error instanceof Error ? error.message : "忽略主题失败");
     } finally {
       setRejectingClusterId(null);
+    }
+  }
+
+  async function handleReactivateCluster(clusterId: string) {
+    setClusterActionError(null);
+    setClusterActionNotice(null);
+    setReactivatingClusterId(clusterId);
+
+    try {
+      const response = await fetch(`/api/topics/clusters/${clusterId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status: "open",
+        }),
+      });
+
+      const data = (await response.json()) as
+        | { topicCluster: TopicCluster }
+        | ApiErrorResponse;
+
+      if (!response.ok || !("topicCluster" in data)) {
+        throw new Error(resolveApiErrorMessage(data, "重新激活主题失败"));
+      }
+
+      setTopicClusters((current) =>
+        current.map((cluster) =>
+          cluster.id === clusterId ? data.topicCluster : cluster,
+        ),
+      );
+      setClusterActionNotice("已重新激活当前主题，它会重新回到待确认列表。");
+    } catch (error) {
+      setClusterActionError(error instanceof Error ? error.message : "重新激活主题失败");
+    } finally {
+      setReactivatingClusterId(null);
     }
   }
 
@@ -1173,6 +1211,8 @@ export function SourceAccountScreen({
                       ? "正在发起多篇仿写..."
                       : rejectingClusterId === cluster.id
                         ? "正在忽略当前主题..."
+                        : reactivatingClusterId === cluster.id
+                          ? "正在重新激活当前主题..."
                         : null}
                   </div>
                   {cluster.status === "open" ? (
@@ -1180,7 +1220,11 @@ export function SourceAccountScreen({
                       <button
                         type="button"
                         onClick={() => void handleRejectCluster(cluster.id)}
-                        disabled={runningClusterId !== null || rejectingClusterId !== null}
+                        disabled={
+                          runningClusterId !== null ||
+                          rejectingClusterId !== null ||
+                          reactivatingClusterId !== null
+                        }
                         className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {rejectingClusterId === cluster.id ? "忽略中..." : "驳回 / 忽略"}
@@ -1188,10 +1232,32 @@ export function SourceAccountScreen({
                       <button
                         type="button"
                         onClick={() => void handleStartRewriteTask(cluster.id)}
-                        disabled={runningClusterId !== null || rejectingClusterId !== null}
+                        disabled={
+                          runningClusterId !== null ||
+                          rejectingClusterId !== null ||
+                          reactivatingClusterId !== null
+                        }
                         className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {runningClusterId === cluster.id ? "仿写中..." : "通过进入仿写"}
+                      </button>
+                    </div>
+                  ) : cluster.status === "rejected" ? (
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-slate-600">
+                        {getTopicClusterStatusDescription(cluster.status)}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => void handleReactivateCluster(cluster.id)}
+                        disabled={
+                          runningClusterId !== null ||
+                          rejectingClusterId !== null ||
+                          reactivatingClusterId !== null
+                        }
+                        className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {reactivatingClusterId === cluster.id ? "重新激活中..." : "重新激活"}
                       </button>
                     </div>
                   ) : (

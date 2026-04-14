@@ -108,6 +108,54 @@ test("topic cluster routes can reject a cluster", async () => {
   assert.equal(patchPayload.topicCluster?.status, "rejected");
 });
 
+test("topic cluster routes can reactivate a rejected cluster", async () => {
+  setAppDatabaseForTesting(createTempDb());
+  const sourceAccountId = await createSourceAccount();
+
+  await createCandidateArticle({
+    sourceAccountId,
+    title: "之后还想重新做的主题",
+    contentMarkdown: "这轮先忽略，后面可以重新激活。",
+  });
+
+  const rebuildResponse = await POST(
+    new Request("http://localhost/api/topics/clusters", {
+      method: "POST",
+    }) as never,
+  );
+  const rebuildPayload = (await rebuildResponse.json()) as {
+    topicClusters: Array<{ id: string }>;
+  };
+  const clusterId = rebuildPayload.topicClusters[0]?.id;
+
+  assert.ok(clusterId);
+
+  await PATCH(
+    new Request(`http://localhost/api/topics/clusters/${clusterId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "rejected" }),
+    }) as never,
+    { params: Promise.resolve({ id: clusterId! }) },
+  );
+
+  const reactivateResponse = await PATCH(
+    new Request(`http://localhost/api/topics/clusters/${clusterId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "open" }),
+    }) as never,
+    { params: Promise.resolve({ id: clusterId! }) },
+  );
+  const reactivatePayload = (await reactivateResponse.json()) as {
+    topicCluster?: { id: string; status: string };
+  };
+
+  assert.equal(reactivateResponse.status, 200);
+  assert.equal(reactivatePayload.topicCluster?.id, clusterId);
+  assert.equal(reactivatePayload.topicCluster?.status, "open");
+});
+
 async function createSourceAccount() {
   const response = await POST_SOURCE_ACCOUNT(
     new Request("http://localhost/api/topics/source-accounts", {

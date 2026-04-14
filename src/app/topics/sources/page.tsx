@@ -2,8 +2,8 @@ import { AppShell } from "@/components/layout/app-shell";
 import { SourceAccountPage } from "@/components/topics/source-account-page";
 import { getTopicCenterPageData } from "@/lib/topics/topic-center-page-data";
 
-export default function TopicSourcesPage() {
-  const pageData = getTopicCenterPageData();
+export default async function TopicSourcesPage() {
+  const pageData = await getTopicCenterPageData();
 
   return (
     <AppShell

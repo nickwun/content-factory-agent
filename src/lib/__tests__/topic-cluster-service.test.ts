@@ -124,6 +124,31 @@ test("topic cluster service can reject an open cluster", () => {
   assert.equal(rejected?.status, "rejected");
 });
 
+test("topic cluster service can reactivate a rejected cluster", () => {
+  const { candidateArticleService, sourceAccountService, topicClusterService } =
+    createServices();
+  const sourceAccountId = sourceAccountService.createSourceAccount({
+    name: "重开样本",
+    priority: 70,
+  }).id;
+
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId,
+    title: "这篇主题先忽略，之后再看",
+    contentMarkdown: "跑步训练里，有些主题这轮先不做，下一轮再回来。",
+  });
+
+  const [cluster] = topicClusterService.rebuildTopicClusters();
+  assert.ok(cluster);
+
+  const rejected = topicClusterService.rejectTopicCluster(cluster!.id);
+  assert.equal(rejected?.status, "rejected");
+
+  const reactivated = topicClusterService.reactivateTopicCluster(cluster!.id);
+  assert.ok(reactivated);
+  assert.equal(reactivated?.status, "open");
+});
+
 test("topic cluster service does not collapse all running subtopics into a single mega cluster", () => {
   const { candidateArticleService, sourceAccountService, topicClusterService } =
     createServices();

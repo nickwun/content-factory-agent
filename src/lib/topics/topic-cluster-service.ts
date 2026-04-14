@@ -137,6 +137,24 @@ export function createTopicClusterService(input: {
         new Date().toISOString(),
       );
     },
+
+    reactivateTopicCluster(id: string) {
+      const cluster = topicClusterRepository.getById(id);
+
+      if (!cluster) {
+        return null;
+      }
+
+      if (cluster.status !== "rejected") {
+        return cluster;
+      }
+
+      return topicClusterRepository.updateStatus(
+        id,
+        "open",
+        new Date().toISOString(),
+      );
+    },
   };
 }
 

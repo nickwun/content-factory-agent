@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server.js";
 
-import { rejectTopicCluster } from "../../../../../lib/topics/topic-cluster-server.ts";
+import {
+  reactivateTopicCluster,
+  rejectTopicCluster,
+} from "../../../../../lib/topics/topic-cluster-server.ts";
 
 type UpdateTopicClusterBody = {
   status?: unknown;
@@ -13,11 +16,14 @@ export async function PATCH(
   const { id } = await context.params;
   const body = (await request.json()) as UpdateTopicClusterBody;
 
-  if (body.status !== "rejected") {
+  if (body.status !== "rejected" && body.status !== "open") {
     return NextResponse.json({ error: "unsupported status" }, { status: 400 });
   }
 
-  const topicCluster = rejectTopicCluster(id);
+  const topicCluster =
+    body.status === "rejected"
+      ? rejectTopicCluster(id)
+      : reactivateTopicCluster(id);
 
   if (!topicCluster) {
     return NextResponse.json(

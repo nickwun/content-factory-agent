@@ -49,3 +49,52 @@ test("mapFeishuSnapshotToPayload prefers markdownBody and keeps cover image expl
   assert.equal(payload.blocks[1]?.block_type, 4);
   assert.equal(payload.blocks.at(-1)?.block_type, 13);
 });
+
+test("renderFeishuMarkdownToBlockPlan converts markdown bold markers into feishu bold text runs", () => {
+  const blocks = renderFeishuMarkdownToBlockPlan(
+    "跑步不内卷",
+    "这是一段普通说明。\n\n**训练上：渐进式减负。**\n\n- **营养上：** 碳水是好朋友。\n\n> **提醒：** 不要临时换装备",
+  );
+
+  assert.equal(blocks[1]?.block_type, 2);
+  assert.deepEqual((blocks[2] as { text: { elements: Array<unknown> } }).text.elements, [
+    {
+      text_run: {
+        content: "训练上：渐进式减负。",
+        text_element_style: {
+          bold: true,
+        },
+      },
+    },
+  ]);
+  assert.deepEqual((blocks[3] as { bullet: { elements: Array<unknown> } }).bullet.elements, [
+    {
+      text_run: {
+        content: "营养上：",
+        text_element_style: {
+          bold: true,
+        },
+      },
+    },
+    {
+      text_run: {
+        content: " 碳水是好朋友。",
+      },
+    },
+  ]);
+  assert.deepEqual((blocks[4] as { quote: { elements: Array<unknown> } }).quote.elements, [
+    {
+      text_run: {
+        content: "提醒：",
+        text_element_style: {
+          bold: true,
+        },
+      },
+    },
+    {
+      text_run: {
+        content: " 不要临时换装备",
+      },
+    },
+  ]);
+});

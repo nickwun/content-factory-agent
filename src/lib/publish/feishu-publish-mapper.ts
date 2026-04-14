@@ -47,7 +47,7 @@ function convertMarkdownNodeToFeishuBlocks(node: WechatMarkdownNode): FeishuDocx
       return [{
         block_type: 15,
         quote: {
-          elements: [createTextRun(node.text)],
+          elements: createTextRuns(node.text),
         },
       }];
     case "list":
@@ -55,7 +55,7 @@ function convertMarkdownNodeToFeishuBlocks(node: WechatMarkdownNode): FeishuDocx
         ({
           block_type: node.ordered ? 13 : 12,
           [node.ordered ? "ordered" : "bullet"]: {
-            elements: [createTextRun(item)],
+            elements: createTextRuns(item),
           },
         }) as FeishuDocxBlock,
       );
@@ -69,7 +69,7 @@ function convertMarkdownNodeToFeishuBlocks(node: WechatMarkdownNode): FeishuDocx
       return [{
         block_type: 2,
         text: {
-          elements: [createTextRun(node.text)],
+          elements: createTextRuns(node.text),
         },
       }];
   }
@@ -80,7 +80,7 @@ function createHeadingBlock(level: 1 | 2 | 3, text: string): FeishuDocxBlock {
     return {
       block_type: 3,
       heading1: {
-        elements: [createTextRun(text)],
+        elements: createTextRuns(text),
       },
     };
   }
@@ -89,7 +89,7 @@ function createHeadingBlock(level: 1 | 2 | 3, text: string): FeishuDocxBlock {
     return {
       block_type: 4,
       heading2: {
-        elements: [createTextRun(text)],
+        elements: createTextRuns(text),
       },
     };
   }
@@ -97,15 +97,46 @@ function createHeadingBlock(level: 1 | 2 | 3, text: string): FeishuDocxBlock {
   return {
     block_type: 5,
     heading3: {
-      elements: [createTextRun(text)],
+      elements: createTextRuns(text),
     },
   };
 }
 
-function createTextRun(content: string): FeishuDocxTextRun {
+function createTextRuns(content: string): FeishuDocxTextRun[] {
+  const normalizedContent = content.trim();
+
+  if (!normalizedContent) {
+    return [createTextRun("")];
+  }
+
+  const segments = normalizedContent.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  const runs = segments.map((segment) => {
+    const boldMatch = /^\*\*([^*]+)\*\*$/.exec(segment);
+
+    if (boldMatch) {
+      return createTextRun(boldMatch[1] ?? "", { bold: true });
+    }
+
+    return createTextRun(segment);
+  });
+
+  return runs.length > 0 ? runs : [createTextRun(normalizedContent)];
+}
+
+function createTextRun(
+  content: string,
+  options?: { bold?: boolean },
+): FeishuDocxTextRun {
   return {
     text_run: {
-      content: content.trim(),
+      content,
+      ...(options?.bold
+        ? {
+            text_element_style: {
+              bold: true,
+            },
+          }
+        : {}),
     },
   };
 }
