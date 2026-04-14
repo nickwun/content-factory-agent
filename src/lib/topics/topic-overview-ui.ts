@@ -85,6 +85,19 @@ export function buildTopicClusterHeaderMeta(input: {
   ];
 }
 
+export function getTopicClusterStatusSortOrder(status: TopicCluster["status"]) {
+  switch (status) {
+    case "open":
+      return 0;
+    case "approved":
+      return 1;
+    case "rewritten":
+      return 2;
+    case "rejected":
+      return 3;
+  }
+}
+
 export function toReadableTopicReasons(reasons: string[]) {
   const worthDoing: string[] = [];
   const caution: string[] = [];

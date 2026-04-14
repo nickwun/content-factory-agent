@@ -66,7 +66,10 @@ test("rewrite task service creates structured brief from topic cluster and marks
       "很多人重新开始跑步，不是为了成绩，而是为了把生活重新稳住。",
   });
 
-  const [cluster] = topicClusterService.rebuildTopicClusters();
+  const clusters = topicClusterService.rebuildTopicClusters();
+  const cluster = clusters.find((item) => item.articleIds.length === 2);
+
+  assert.ok(cluster);
   const started = rewriteTaskService.startRewriteTaskFromCluster(cluster!.id);
 
   assert.equal(started.rewriteTask.status, "running");
@@ -165,7 +168,7 @@ test("rewrite task service de-duplicates repeated key angle titles", () => {
   candidateArticleService.createManualCandidateArticle({
     sourceAccountId,
     title: "中年跑步先别急着快",
-    contentMarkdown: "第三篇内容，讲长期训练。",
+    contentMarkdown: "第三篇内容，讲配速、恢复和长期训练。",
   });
 
   const [cluster] = topicClusterService.rebuildTopicClusters();

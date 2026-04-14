@@ -124,6 +124,80 @@ test("topic cluster service can reject an open cluster", () => {
   assert.equal(rejected?.status, "rejected");
 });
 
+test("topic cluster service does not collapse all running subtopics into a single mega cluster", () => {
+  const { candidateArticleService, sourceAccountService, topicClusterService } =
+    createServices();
+  const runningSourceId = sourceAccountService.createSourceAccount({
+    name: "跑步样本 A",
+    handle: "runner-a",
+    priority: 90,
+  }).id;
+
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId: runningSourceId,
+    title: "配速训练不是越快越好",
+    contentMarkdown: "跑步训练里，配速和恢复要一起看。",
+  });
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId: runningSourceId,
+    title: "恢复跑比硬顶训练更重要",
+    contentMarkdown: "长期训练里，恢复和节奏比一时状态更关键。",
+  });
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId: runningSourceId,
+    title: "比赛前一周，跑量要怎么收",
+    contentMarkdown: "跑步比赛前一周，训练重点会从跑量切到状态和节奏。",
+  });
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId: runningSourceId,
+    title: "跑鞋怎么选，别只看碳板",
+    contentMarkdown: "跑步训练里的装备选择，如果只看碳板，很容易把日常跑和比赛鞋混在一起。",
+  });
+
+  const clusters = topicClusterService.rebuildTopicClusters();
+
+  assert.ok(clusters.length >= 2);
+
+  const runningClusters = clusters.filter((cluster) =>
+    cluster.keywords.includes("跑步"),
+  );
+
+  assert.ok(runningClusters.length >= 2);
+  assert.ok(runningClusters.every((cluster) => cluster.articleIds.length < 4));
+});
+
+test("topic cluster service preserves rejected status when rebuilding same topic", () => {
+  const { candidateArticleService, sourceAccountService, topicClusterService } =
+    createServices();
+  const sourceAccountId = sourceAccountService.createSourceAccount({
+    name: "长期训练样本",
+    handle: "runner-core",
+    priority: 90,
+  }).id;
+
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId,
+    title: "配速稳定下来之后，训练才算开始",
+    contentMarkdown: "跑步训练里，节奏、配速和恢复经常一起出现。",
+  });
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId,
+    title: "恢复跑不是可有可无的点缀",
+    contentMarkdown: "很多人只盯训练强度，但恢复跑才是长期训练能走远的关键。",
+  });
+
+  const [cluster] = topicClusterService.rebuildTopicClusters();
+  assert.ok(cluster);
+
+  const rejected = topicClusterService.rejectTopicCluster(cluster!.id);
+  assert.equal(rejected?.status, "rejected");
+
+  const [rebuiltCluster] = topicClusterService.rebuildTopicClusters();
+  assert.ok(rebuiltCluster);
+  assert.equal(rebuiltCluster?.topicTitle, cluster?.topicTitle);
+  assert.equal(rebuiltCluster?.status, "rejected");
+});
+
 function createServices() {
   const db = createTempDb();
   ensureSourceAccountsTable(db);

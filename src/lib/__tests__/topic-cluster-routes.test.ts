@@ -27,7 +27,7 @@ test("topic cluster routes rebuild clusters and list them", async () => {
   await createCandidateArticle({
     sourceAccountId,
     title: "跑步是中年人的长期主义",
-    contentMarkdown: "跑步不是为了赢别人，而是为了把生活慢慢稳住。",
+    contentMarkdown: "跑步不是为了赢别人，而是为了把节奏和恢复慢慢稳住。",
   });
   await createCandidateArticle({
     sourceAccountId,

@@ -10,6 +10,7 @@ import { createHistoryRecord } from "@/lib/history/history-record-factory";
 import {
   buildTopicOverviewStats,
   buildTopicClusterHeaderMeta,
+  getTopicClusterStatusSortOrder,
   getRewriteTaskStatusMeta,
   truncateRewriteTaskError,
   toReadableTopicReasons,
@@ -136,10 +137,17 @@ export function SourceAccountScreen({
         cluster,
         score: scoreMap.get(cluster.id),
       }))
-      .sort(
-        (left, right) =>
-          (right.score?.totalScore ?? -1) - (left.score?.totalScore ?? -1),
-      );
+      .sort((left, right) => {
+        const statusOrderDifference =
+          getTopicClusterStatusSortOrder(left.cluster.status) -
+          getTopicClusterStatusSortOrder(right.cluster.status);
+
+        if (statusOrderDifference !== 0) {
+          return statusOrderDifference;
+        }
+
+        return (right.score?.totalScore ?? -1) - (left.score?.totalScore ?? -1);
+      });
   }, [topicClusters, topicScores]);
   const overviewStats = useMemo(
     () =>

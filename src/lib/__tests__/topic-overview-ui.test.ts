@@ -5,6 +5,7 @@ import {
   buildTopicOverviewStats,
   buildTopicClusterHeaderMeta,
   getRewriteTaskStatusMeta,
+  getTopicClusterStatusSortOrder,
   truncateRewriteTaskError,
   toReadableTopicReasons,
 } from "../topics/topic-overview-ui.ts";
@@ -87,6 +88,13 @@ test("buildTopicClusterHeaderMeta keeps header priority as status, article count
     { id: "total-score", label: "总分 87", emphasis: "strong" },
     { id: "title-source", label: "规则聚类", emphasis: "subtle" },
   ]);
+});
+
+test("getTopicClusterStatusSortOrder keeps open topics ahead of ignored topics", () => {
+  assert.equal(getTopicClusterStatusSortOrder("open"), 0);
+  assert.equal(getTopicClusterStatusSortOrder("approved"), 1);
+  assert.equal(getTopicClusterStatusSortOrder("rewritten"), 2);
+  assert.equal(getTopicClusterStatusSortOrder("rejected"), 3);
 });
 
 test("truncateRewriteTaskError keeps task error readable without making cards too tall", () => {
