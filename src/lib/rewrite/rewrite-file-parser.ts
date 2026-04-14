@@ -123,7 +123,7 @@ async function extractDocxText(
 
   let mammothModule: {
     extractRawText: (
-      input: { arrayBuffer: ArrayBuffer },
+      input: { arrayBuffer: ArrayBuffer } | { buffer: Buffer },
     ) => Promise<{ value: string }>;
   };
 
@@ -136,6 +136,14 @@ async function extractDocxText(
     );
   }
 
-  const result = await mammothModule.extractRawText({ arrayBuffer });
+  const result = await mammothModule.extractRawText(
+    buildMammothDocxInput(arrayBuffer),
+  );
   return result.value;
+}
+
+export function buildMammothDocxInput(arrayBuffer: ArrayBuffer) {
+  return {
+    buffer: Buffer.from(arrayBuffer),
+  };
 }

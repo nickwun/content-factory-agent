@@ -15,6 +15,9 @@ export type PublishErrorCode =
   | "invalid_image_url"
   | "not_implemented";
 
+export type FeishuCoverSyncStatus = "synced" | "failed" | "skipped";
+export type FeishuCoverSyncFailureReason = "upload_failed" | "insert_failed";
+
 export type WechatPublishAccount = {
   accountId: string;
   nickname: string;
@@ -86,4 +89,93 @@ export type XiaohongshuPublishRequest = {
 export type XiaohongshuPublishResponse = {
   publishUrl: string;
   qrcodeUrl: string;
+};
+
+export type FeishuPublishSnapshot = {
+  schemaVersion: string;
+  platform: "wechat_article";
+  recordId: string;
+  title: string;
+  markdownBody?: string;
+  coverImageUrl?: string;
+  blocks: WechatBlock[];
+};
+
+export type FeishuPublishPayload = {
+  title: string;
+  blocks: FeishuDocxBlock[];
+  coverImageUrl?: string;
+};
+
+export type FeishuDocxTextRun = {
+  text_run: {
+    content: string;
+  };
+};
+
+export type FeishuDocxBlock =
+  | {
+      block_type: 2;
+      text: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 3;
+      heading1: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 4;
+      heading2: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 5;
+      heading3: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 12;
+      bullet: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 13;
+      ordered: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 15;
+      quote: {
+        elements: FeishuDocxTextRun[];
+      };
+    }
+  | {
+      block_type: 22;
+      divider: Record<string, never>;
+    }
+  | {
+      block_type: 27;
+      image: Record<string, never>;
+    };
+
+export type FeishuPublishRequest = {
+  snapshot: FeishuPublishSnapshot;
+};
+
+export type FeishuPublishResponse = {
+  success: boolean;
+  documentId: string;
+  documentUrl: string;
+  bodyPublished: boolean;
+  coverSyncStatus: FeishuCoverSyncStatus;
+  coverSyncFailureReason?: FeishuCoverSyncFailureReason;
+  warningMessage?: string;
+  message?: string;
 };

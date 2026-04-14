@@ -3,12 +3,22 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  buildFeishuPublishErrorMessage,
   buildWechatPublishErrorMessage,
   PublishRequestError,
+  requestFeishuPublish,
   requestWechatArticlePublish,
   requestWechatPublishAccounts,
 } from "@/lib/publish/publish-client";
-import type { WechatPublishAccount, WechatPublishResponse } from "@/lib/publish/types";
+import type {
+  FeishuPublishResponse,
+  WechatPublishAccount,
+  WechatPublishResponse,
+} from "@/lib/publish/types";
+import {
+  buildFeishuPublishPreviewChecks,
+  createFeishuPublishSnapshot,
+} from "@/lib/publish/feishu-publish-ui";
 import {
   buildWechatPublishPreviewChecks,
   createWechatPublishSnapshot,
@@ -20,29 +30,45 @@ type WechatPublishDialogProps = {
   open: boolean;
   record: HistoryRecord | null;
   onClose: () => void;
-  onSuccess: (result: WechatPublishResponse) => void;
+  onWechatSuccess: (result: WechatPublishResponse) => void;
+  onFeishuSuccess: (result: FeishuPublishResponse) => void;
 };
 
 export function WechatPublishDialog({
   open,
   record,
   onClose,
-  onSuccess,
+  onWechatSuccess,
+  onFeishuSuccess,
 }: WechatPublishDialogProps) {
   const [accounts, setAccounts] = useState<WechatPublishAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
   const [publishType, setPublishType] = useState<"article" | "xiaolvshu">("article");
+  const [publishTarget, setPublishTarget] = useState<"wechat" | "feishu">("wechat");
   const [loadingAccounts, setLoadingAccounts] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const preview = useMemo(
+  const wechatPreview = useMemo(
     () => (record ? buildWechatPublishPreviewChecks(record) : null),
+    [record],
+  );
+  const feishuPreview = useMemo(
+    () => (record ? buildFeishuPublishPreviewChecks(record) : null),
     [record],
   );
 
   useEffect(() => {
-    if (!open || !record) {
+    if (!open) {
+      return;
+    }
+
+    setPublishTarget("wechat");
+    setErrorMessage(null);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open || !record || publishTarget !== "wechat") {
       return;
     }
 
@@ -86,7 +112,7 @@ export function WechatPublishDialog({
     return () => {
       cancelled = true;
     };
-  }, [open, record]);
+  }, [open, publishTarget, record]);
 
   if (!open || !record) {
     return null;
@@ -102,14 +128,18 @@ export function WechatPublishDialog({
   const selectedPublishTypeOption = publishTypeOptions.find(
     (option) => option.value === publishType,
   );
+  const activePreview = publishTarget === "feishu" ? feishuPreview : wechatPreview;
+  const canSubmit =
+    publishTarget === "feishu"
+      ? Boolean(activePreview?.ready) && !submitting
+      : !submitting &&
+        !loadingAccounts &&
+        Boolean(activePreview?.ready) &&
+        Boolean(selectedAccountId) &&
+        Boolean(selectedPublishTypeOption?.enabled);
 
   async function handleSubmit() {
-    if (
-      !record ||
-      !preview?.ready ||
-      !selectedAccountId ||
-      !selectedPublishTypeOption?.enabled
-    ) {
+    if (!record || !activePreview?.ready) {
       return;
     }
 
@@ -117,19 +147,36 @@ export function WechatPublishDialog({
     setErrorMessage(null);
 
     try {
-      const result = await requestWechatArticlePublish(fetch, {
-        accountId: selectedAccountId,
-        publishType,
-        snapshot: createWechatPublishSnapshot(record),
-      });
+      if (publishTarget === "feishu") {
+        const result = await requestFeishuPublish(fetch, {
+          snapshot: createFeishuPublishSnapshot(record),
+        });
 
-      onSuccess(result);
+        onFeishuSuccess(result);
+      } else {
+        if (!selectedAccountId || !selectedPublishTypeOption?.enabled) {
+          return;
+        }
+
+        const result = await requestWechatArticlePublish(fetch, {
+          accountId: selectedAccountId,
+          publishType,
+          snapshot: createWechatPublishSnapshot(record),
+        });
+
+        onWechatSuccess(result);
+      }
+
       onClose();
     } catch (error) {
       setErrorMessage(
-        error instanceof PublishRequestError
-          ? buildWechatPublishErrorMessage(error)
-          : "公众号发布失败，请稍后重试。",
+        publishTarget === "feishu"
+          ? error instanceof PublishRequestError
+            ? buildFeishuPublishErrorMessage(error)
+            : "飞书文档发布失败，请稍后重试。"
+          : error instanceof PublishRequestError
+            ? buildWechatPublishErrorMessage(error)
+            : "公众号发布失败，请稍后重试。",
       );
     } finally {
       setSubmitting(false);
@@ -142,19 +189,21 @@ export function WechatPublishDialog({
         <div className="mb-5 flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
-              Wechat Publish
+              Content Publish
             </p>
             <h2 className="mt-2 text-2xl font-semibold text-slate-900">
-              发布到公众号草稿箱
+              {publishTarget === "feishu" ? "发布到飞书文档" : "发布到公众号草稿箱"}
             </h2>
             <p className="mt-3 text-sm leading-7 text-slate-500">
-              普通文章使用当前公众号长文内容；小绿书模式优先使用当前记录里的小红书文案与图片。
+              {publishTarget === "feishu"
+                ? "首版会创建新的飞书文档，正文优先取当前 markdownBody；如果已有头图，会尝试按头图、标题、正文顺序同步。"
+                : "普通文章使用当前公众号长文内容；小绿书模式优先使用当前记录里的小红书文案与图片。"}
             </p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-full border border-black/8 bg-stone-100 px-4 py-2 text-sm font-medium text-slate-600"
+            className="inline-flex min-w-[88px] shrink-0 items-center justify-center whitespace-nowrap rounded-full border border-black/8 bg-stone-100 px-4 py-2 text-sm font-medium text-slate-600"
           >
             关闭
           </button>
@@ -162,6 +211,50 @@ export function WechatPublishDialog({
 
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-4">
+            <div className="rounded-[24px] border border-black/8 bg-stone-50/90 p-4">
+              <p className="text-sm font-semibold text-slate-900">发布去向</p>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {[
+                  {
+                    value: "wechat" as const,
+                    label: "公众号草稿箱",
+                    description: "继续沿用公众号发布凭证，支持普通文章和小绿书模式。",
+                  },
+                  {
+                    value: "feishu" as const,
+                    label: "飞书文档",
+                    description: "创建新的飞书文档，便于协作、审稿和继续沉淀。",
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setPublishTarget(option.value);
+                      setErrorMessage(null);
+                    }}
+                    className={`rounded-2xl border px-4 py-3 text-left transition ${
+                      publishTarget === option.value
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-black/8 bg-white text-slate-700"
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-semibold">{option.label}</span>
+                      <span className="text-[11px] opacity-75">
+                        {publishTarget === option.value ? "当前选择" : "可用"}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs leading-6 opacity-80">
+                      {option.description}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {publishTarget === "wechat" ? (
+              <>
             <div className="rounded-[24px] border border-black/8 bg-stone-50/90 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -257,12 +350,27 @@ export function WechatPublishDialog({
                 ))}
               </div>
             </div>
+              </>
+            ) : (
+              <div className="rounded-[24px] border border-black/8 bg-stone-50/90 p-4">
+                <p className="text-sm font-semibold text-slate-900">飞书文档写入方式</p>
+                <div className="mt-3 space-y-3 text-sm leading-7 text-slate-600">
+                  <p>将基于当前文章标题创建一篇新的飞书文档。</p>
+                  <p>正文优先使用当前 markdownBody，如果没有 markdownBody 再回退 blocks。</p>
+                  <p>
+                    {createFeishuPublishSnapshot(record).coverImageUrl
+                      ? "当前记录已检测到头图，会尽量按“头图 → 标题 → 正文”的顺序同步。"
+                      : "当前记录未检测到头图，本次将只发布标题与正文。"}
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="rounded-[24px] border border-black/8 bg-stone-50/90 p-4">
             <p className="text-sm font-semibold text-slate-900">发布预检查</p>
             <div className="mt-4 space-y-2.5">
-              {preview?.items.map((item) => (
+              {activePreview?.items.map((item) => (
                 <div
                   key={item.id}
                   className="flex items-center justify-between gap-3 rounded-2xl bg-white px-4 py-3"
@@ -281,9 +389,15 @@ export function WechatPublishDialog({
               ))}
             </div>
 
-            {selectedAccount ? (
+            {publishTarget === "wechat" && selectedAccount ? (
               <p className="mt-4 text-xs leading-6 text-slate-500">
                 当前将发布到：{selectedAccount.nickname} · {selectedPublishTypeOption?.label}
+              </p>
+            ) : null}
+
+            {publishTarget === "feishu" ? (
+              <p className="mt-4 text-xs leading-6 text-slate-500">
+                将创建新的飞书文档，并优先同步当前文章成稿内容。
               </p>
             ) : null}
 
@@ -304,24 +418,18 @@ export function WechatPublishDialog({
               <button
                 type="button"
                 onClick={() => void handleSubmit()}
-                disabled={
-                  submitting ||
-                  loadingAccounts ||
-                  !preview?.ready ||
-                  !selectedAccountId ||
-                  !selectedPublishTypeOption?.enabled
-                }
+                disabled={!canSubmit}
                 className={`rounded-full px-4 py-2 text-sm font-medium ${
-                  submitting ||
-                  loadingAccounts ||
-                  !preview?.ready ||
-                  !selectedAccountId ||
-                  !selectedPublishTypeOption?.enabled
+                  !canSubmit
                     ? "cursor-not-allowed bg-stone-200 text-slate-500"
                     : "bg-slate-900 text-white"
                 }`}
               >
-                {submitting ? "发布中..." : "发布到草稿箱"}
+                {submitting
+                  ? "发布中..."
+                  : publishTarget === "feishu"
+                    ? "发布到飞书文档"
+                    : "发布到草稿箱"}
               </button>
             </div>
           </div>

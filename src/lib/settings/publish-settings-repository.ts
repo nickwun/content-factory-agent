@@ -14,20 +14,34 @@ type PublishCredentialRow = {
 };
 
 export function createPublishSettingsRepository(db: Database.Database) {
+  const supportedKeys: PublishCredentialKey[] = [
+    "wechat_publish_api_key",
+    "wechat_publish_base_url",
+    "xiaohongshu_publish_api_key",
+    "xiaohongshu_publish_base_url",
+    "feishu_app_id",
+    "feishu_app_secret",
+  ];
+
+  const placeholders = supportedKeys.map(() => "?").join(", ");
+
   return {
     list() {
       return db
         .prepare(
           `SELECT key, label, description, value, updated_at
            FROM integration_credentials
+           WHERE key IN (${placeholders})
            ORDER BY CASE key
              WHEN 'wechat_publish_api_key' THEN 1
              WHEN 'wechat_publish_base_url' THEN 2
              WHEN 'xiaohongshu_publish_api_key' THEN 3
              WHEN 'xiaohongshu_publish_base_url' THEN 4
+             WHEN 'feishu_app_id' THEN 5
+             WHEN 'feishu_app_secret' THEN 6
            END`,
         )
-        .all()
+        .all(...supportedKeys)
         .map((row) => mapRow(row as PublishCredentialRow));
     },
 

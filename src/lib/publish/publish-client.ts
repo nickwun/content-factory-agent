@@ -1,4 +1,6 @@
 import type {
+  FeishuPublishRequest,
+  FeishuPublishResponse,
   WechatPublishAccount,
   WechatPublishRequest,
   WechatPublishResponse,
@@ -18,7 +20,8 @@ type PublishErrorCode =
   | "missing_images"
   | "invalid_image_url"
   | "rate_limited"
-  | "upstream_publish_failed";
+  | "upstream_publish_failed"
+  | "not_implemented";
 
 export class PublishRequestError extends Error {
   code: PublishErrorCode;
@@ -79,6 +82,25 @@ export async function requestXiaohongshuPublish(
   return (await response.json()) as XiaohongshuPublishResponse;
 }
 
+export async function requestFeishuPublish(
+  fetcher: typeof fetch,
+  request: FeishuPublishRequest,
+) {
+  const response = await fetcher("/api/publish/feishu", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(request),
+  });
+
+  if (!response.ok) {
+    throw await parsePublishRequestError(response);
+  }
+
+  return (await response.json()) as FeishuPublishResponse;
+}
+
 export function buildWechatPublishErrorMessage(error: PublishRequestError) {
   if (error.code === "missing_credentials") {
     return "当前未配置公众号发布凭证，请先去设置页补齐。";
@@ -131,6 +153,26 @@ export function buildXiaohongshuPublishErrorMessage(error: PublishRequestError) 
   return error.message || "小红书发布失败，请稍后重试。";
 }
 
+export function buildFeishuPublishErrorMessage(error: PublishRequestError) {
+  if (error.code === "missing_credentials") {
+    return "当前未配置飞书文档发布凭证，请先去设置页补齐。";
+  }
+
+  if (error.code === "invalid_api_key") {
+    return "飞书文档发布鉴权失败，请检查飞书 App ID / App Secret。";
+  }
+
+  if (error.code === "validation_error") {
+    return error.message || "当前内容未通过飞书文档发布预检查。";
+  }
+
+  if (error.code === "rate_limited") {
+    return "飞书文档发布请求过于频繁，请稍后重试。";
+  }
+
+  return error.message || "飞书文档发布失败，请稍后重试。";
+}
+
 async function parsePublishRequestError(response: Response) {
   const payloadText = await response.text();
 
@@ -173,6 +215,7 @@ function isPublishErrorCode(value: string | undefined): value is PublishErrorCod
     value === "missing_images" ||
     value === "invalid_image_url" ||
     value === "rate_limited" ||
-    value === "upstream_publish_failed"
+    value === "upstream_publish_failed" ||
+    value === "not_implemented"
   );
 }

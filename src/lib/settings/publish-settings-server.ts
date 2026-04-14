@@ -83,5 +83,19 @@ export function getDefaultPublishCredentialSettings(): PublishCredentialSetting[
       value: "",
       updatedAt: now,
     },
+    {
+      key: "feishu_app_id",
+      label: "飞书 App ID",
+      description: "飞书自建应用的 App ID，用于服务端换取 tenant_access_token。",
+      value: "",
+      updatedAt: now,
+    },
+    {
+      key: "feishu_app_secret",
+      label: "飞书 App Secret",
+      description: "飞书自建应用的 App Secret，仅在服务端用于创建文档与上传头图。",
+      value: "",
+      updatedAt: now,
+    },
   ];
 }

@@ -55,7 +55,7 @@ export function PublishCredentialsPanel({
           发布凭证配置
         </h2>
         <p className="mt-3 text-sm leading-7 text-slate-500">
-          发布相关 API Key 和 Base URL 首版统一存放在 SQLite 设置页，不走环境变量 fallback。
+          发布相关凭证统一存放在 SQLite 设置页，不走环境变量 fallback；飞书发布使用服务端 App ID / App Secret 换取官方 tenant_access_token。
         </p>
       </div>
 
@@ -92,6 +92,7 @@ export function PublishCredentialsPanel({
 
               <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
                 <input
+                  type={setting.key.endsWith("secret") ? "password" : "text"}
                   value={setting.value}
                   onChange={(event) =>
                     setSettings((current) =>

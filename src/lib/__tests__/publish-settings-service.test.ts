@@ -36,6 +36,8 @@ test("publish settings service lists all credential keys and updates a single va
       "wechat_publish_base_url",
       "xiaohongshu_publish_api_key",
       "xiaohongshu_publish_base_url",
+      "feishu_app_id",
+      "feishu_app_secret",
     ],
   );
 

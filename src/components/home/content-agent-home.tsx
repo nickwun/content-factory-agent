@@ -3,15 +3,13 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 
-import {
-  APP_SHELL_NAV_BUTTON_CLASS,
-  APP_SHELL_NAV_BUTTON_DISABLED_CLASS,
-  AppShell,
-} from "@/components/layout/app-shell";
+import { AppShell } from "@/components/layout/app-shell";
 import { ArticleSourcePanel } from "@/components/home/article-source-panel";
 import { BatchRewritePanel } from "@/components/home/batch-rewrite-panel";
+import { createHistoryRecord } from "@/lib/history/history-record-factory";
 import { PromptPresetSelector } from "@/components/home/prompt-preset-selector";
 import { PublishQrDialog } from "@/components/publish/publish-qr-dialog";
+import { FeishuPublishResultDialog } from "@/components/publish/feishu-publish-result-dialog";
 import { WechatPublishDialog } from "@/components/publish/wechat-publish-dialog";
 import { XiaohongshuPublishDialog } from "@/components/publish/xiaohongshu-publish-dialog";
 import { WechatEditor } from "@/components/workspace/platform-editors/wechat-editor";
@@ -34,8 +32,11 @@ import {
   getGeneratePendingMessage,
   requestGeneratedDraft,
 } from "@/lib/generation/generate-client";
-import type { DraftGenerationInfo, GeneratedDraftResult } from "@/lib/generation/generation-service";
-import type { XiaohongshuPublishResponse } from "@/lib/publish/types";
+import type { GeneratedDraftResult } from "@/lib/generation/generation-service";
+import type {
+  FeishuPublishResponse,
+  XiaohongshuPublishResponse,
+} from "@/lib/publish/types";
 import {
   buildGenerateRequestPayload,
   buildRewriteSourceErrorMessage,
@@ -176,6 +177,8 @@ export function ContentAgentHome({
     useState(false);
   const [publishQrDialog, setPublishQrDialog] =
     useState<XiaohongshuPublishResponse | null>(null);
+  const [feishuPublishResult, setFeishuPublishResult] =
+    useState<FeishuPublishResponse | null>(null);
   const [mobileHistoryPanelState, setMobileHistoryPanelState] = useState<
     "closed" | "open"
   >("closed");
@@ -680,14 +683,6 @@ export function ContentAgentHome({
     }
   }
 
-  function resetBatchRewriteState() {
-    setBatchRewriteItems([]);
-    setBatchRewriteSelectionMessage(null);
-    if (batchRewriteFileInputRef.current) {
-      batchRewriteFileInputRef.current.value = "";
-    }
-  }
-
   async function handleRenameSubmit(recordId: string) {
     if (!editingTitle.trim()) {
       setRenameError("标题不能为空");
@@ -827,35 +822,6 @@ export function ContentAgentHome({
         },
       }));
     }
-  }
-
-  function startNewDraft() {
-    setComposerPinned(true);
-    setScreenMode("composer");
-    setUserPrompt("");
-    setRewriteComposerMode("single");
-    setSelectedPlatforms([]);
-    setSelectedPromptPresetByPlatform({});
-    resetRewriteSourceState();
-    resetBatchRewriteState();
-    setGenerateState("idle");
-    setGenerateMessage(null);
-    resetRenameState();
-  }
-
-  function openComposerPage() {
-    startNewDraft();
-    router.push("/?view=composer");
-  }
-
-  function openWorkspacePage() {
-    if (!activeRecord) {
-      return;
-    }
-
-    setComposerPinned(false);
-    setScreenMode("workspace");
-    router.push("/?view=workspace");
   }
 
   function startRename(recordId: string, title: string) {
@@ -1058,35 +1024,35 @@ export function ContentAgentHome({
 
   return (
     <AppShell
+      currentCenter="creative"
       currentPath="/"
-      actions={
-        shouldShowWorkspace ? (
-          <button
-            type="button"
-            onClick={openComposerPage}
-            className={APP_SHELL_NAV_BUTTON_CLASS}
-          >
-            新建内容
-          </button>
-        ) : activeRecord ? (
-          <button
-            type="button"
-            onClick={openWorkspacePage}
-            className={APP_SHELL_NAV_BUTTON_CLASS}
-          >
-            文章编辑
-          </button>
-        ) : (
-          <button
-            type="button"
-            disabled
-            className={APP_SHELL_NAV_BUTTON_DISABLED_CLASS}
-            title="暂无可编辑文章"
-          >
-            文章编辑
-          </button>
-        )
-      }
+      showUtilityNav={false}
+      secondaryNavItems={[
+        {
+          id: "composer",
+          label: "新建内容",
+          href: "/?view=composer",
+        },
+        activeRecord
+          ? {
+              id: "workspace",
+              label: "文章编辑",
+              href: "/?view=workspace",
+            }
+          : {
+              id: "workspace",
+              label: "文章编辑",
+              href: "/?view=workspace",
+              disabled: true,
+              title: "暂无可编辑文章",
+            },
+        {
+          id: "settings",
+          label: "设置",
+          href: "/settings",
+        },
+      ]}
+      currentSecondaryId={shouldShowWorkspace ? "workspace" : "composer"}
     >
       {toast ? (
         <div className="fixed bottom-4 left-4 right-4 z-50 rounded-full bg-slate-900 px-4 py-2 text-center text-sm font-medium text-white shadow-lg sm:bottom-auto sm:left-auto sm:right-6 sm:top-6 sm:text-left">
@@ -1098,8 +1064,11 @@ export function ContentAgentHome({
         open={wechatPublishDialogOpen}
         record={activeRecord ?? null}
         onClose={() => setWechatPublishDialogOpen(false)}
-        onSuccess={(result) => {
+        onWechatSuccess={(result) => {
           setToast(result.message || "公众号文章已提交到草稿箱");
+        }}
+        onFeishuSuccess={(result) => {
+          setFeishuPublishResult(result);
         }}
       />
       <XiaohongshuPublishDialog
@@ -1116,13 +1085,32 @@ export function ContentAgentHome({
         qrcodeUrl={publishQrDialog?.qrcodeUrl ?? ""}
         onClose={() => setPublishQrDialog(null)}
       />
+      <FeishuPublishResultDialog
+        open={Boolean(feishuPublishResult)}
+        result={feishuPublishResult}
+        onClose={() => setFeishuPublishResult(null)}
+      />
+
+      <div className="mb-5 rounded-[24px] border border-black/8 bg-white/78 px-5 py-4 shadow-[0_14px_34px_rgba(15,23,42,0.04)]">
+        <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
+          Creative Center
+        </p>
+        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+          {shouldShowWorkspace ? "创作中心 / 工作台" : "创作中心 / 新建内容"}
+        </p>
+        <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-500">
+          {shouldShowWorkspace
+            ? "这里承接内容生成后的编辑、保存与发布。选题相关能力已经归到选题中心，不再混在当前工作台里。"
+            : "这里负责内容生成入口和创作配置。选题池、候选文章与主题簇将继续独立长在选题中心。"}
+        </p>
+      </div>
 
       {!shouldShowWorkspace ? (
         <section className="flex min-h-[calc(100vh-9rem)] items-center justify-center">
           <div className="w-full max-w-5xl rounded-[40px] border border-black/10 bg-white/88 p-7 shadow-[0_24px_70px_rgba(15,23,42,0.08)] backdrop-blur">
             <div className="mx-auto max-w-3xl">
               <p className="text-xs font-medium uppercase tracking-[0.24em] text-amber-600">
-                Phase 1 Prototype
+                创作中心 / 新建内容
               </p>
               <h1 className="mt-3 max-w-3xl text-[2.6rem] font-semibold tracking-tight text-slate-900 md:text-[3rem] md:leading-[1.1]">
                 先仿写，再进入多平台工作区继续编辑
@@ -1712,110 +1700,6 @@ export function ContentAgentHome({
       )}
     </AppShell>
   );
-}
-
-function createHistoryRecord(input: {
-  userPrompt: string;
-  selectedPlatforms: PlatformType[];
-  now: string;
-  autoTitle: string;
-  content: HistoryRecord["content"];
-  promptSettings: PlatformPromptSetting[];
-  generationInfo: DraftGenerationInfo;
-  rewriteSource?: RewriteSource | null;
-}): HistoryRecord {
-  const settingsByPlatform = Object.fromEntries(
-    input.promptSettings.map((setting) => [setting.platform, setting]),
-  );
-
-  return {
-    id: crypto.randomUUID(),
-    schemaVersion: 1,
-    autoTitle: input.autoTitle,
-    title: input.autoTitle,
-    isCustomTitle: false,
-    userPrompt: input.userPrompt,
-    selectedPlatforms: input.selectedPlatforms,
-    createdAt: input.now,
-    updatedAt: input.now,
-    generation: {
-      generatorVersion: input.generationInfo.generatorVersion,
-      modelProvider: input.generationInfo.modelProvider,
-      modelName: input.generationInfo.modelName,
-      generatedAt: input.now,
-      hasRewriteSource: Boolean(input.rewriteSource),
-      ...(input.rewriteSource
-        ? {
-            rewriteSourceKind: input.rewriteSource.kind,
-            rewriteSourceName: input.rewriteSource.sourceName,
-            rewriteSourceCharCount: input.rewriteSource.charCount,
-            rewriteSourceTruncated: input.rewriteSource.truncated === true,
-          }
-        : {}),
-      ...(input.generationInfo.rewriteMode
-        ? {
-            rewriteMode: input.generationInfo.rewriteMode,
-            usedLongformRewrite: input.generationInfo.usedLongformRewrite === true,
-            ...(typeof input.generationInfo.rewriteChunkCount === "number"
-              ? { rewriteChunkCount: input.generationInfo.rewriteChunkCount }
-              : {}),
-            ...(input.generationInfo.rewriteBriefVersion
-              ? { rewriteBriefVersion: input.generationInfo.rewriteBriefVersion }
-              : {}),
-          }
-        : {}),
-      ...(typeof input.generationInfo.wechatFinalizationEnabled === "boolean"
-        ? {
-            wechatFinalizationEnabled:
-              input.generationInfo.wechatFinalizationEnabled,
-            wechatFinalizationApplied:
-              input.generationInfo.wechatFinalizationApplied === true,
-            ...(typeof input.generationInfo.wechatFinalizationTargetMinWords ===
-            "number"
-              ? {
-                  wechatFinalizationTargetMinWords:
-                    input.generationInfo.wechatFinalizationTargetMinWords,
-                }
-              : {}),
-            ...(typeof input.generationInfo.wechatFinalizationTargetMaxWords ===
-            "number"
-              ? {
-                  wechatFinalizationTargetMaxWords:
-                    input.generationInfo.wechatFinalizationTargetMaxWords,
-                }
-              : {}),
-          }
-        : {}),
-      selectedPlatformsSnapshot: input.selectedPlatforms,
-      promptSnapshotByPlatform: Object.fromEntries(
-        input.selectedPlatforms.map((platform) => [
-          platform,
-          settingsByPlatform[platform]?.promptTemplate ?? "",
-        ]),
-      ),
-      promptPresetIdByPlatform: Object.fromEntries(
-        input.selectedPlatforms
-          .filter((platform) => settingsByPlatform[platform]?.id)
-          .map((platform) => [platform, settingsByPlatform[platform]?.id]),
-      ),
-      promptPresetNameByPlatform: Object.fromEntries(
-        input.selectedPlatforms
-          .filter((platform) => settingsByPlatform[platform]?.name)
-          .map((platform) => [platform, settingsByPlatform[platform]?.name]),
-      ),
-      settingsVersionByPlatform: Object.fromEntries(
-        input.selectedPlatforms
-          .filter((platform) => settingsByPlatform[platform]?.version)
-          .map((platform) => [platform, settingsByPlatform[platform]?.version]),
-      ),
-    },
-    content: input.content,
-    workspace: {
-      activePlatform: input.selectedPlatforms[0] ?? "wechat_article",
-      platformOrder: input.selectedPlatforms,
-      lastViewedAt: input.now,
-    },
-  };
 }
 
 function getGenerationSuccessMessage(

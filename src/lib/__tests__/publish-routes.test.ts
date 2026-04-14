@@ -6,6 +6,7 @@ import test, { afterEach } from "node:test";
 
 import { openSqliteDatabase, setAppDatabaseForTesting } from "../db/sqlite.ts";
 import {
+  handleFeishuPublishRequest,
   handleWechatAccountsRequest,
   handleWechatPublishRequest,
   handleXiaohongshuPublishRequest,
@@ -120,6 +121,44 @@ test("xiaohongshu publish route returns missing_images when snapshot has no gene
 
   assert.equal(response.status, 400);
   assert.equal(payload.error.code, "missing_images");
+});
+
+test("feishu publish route returns missing_credentials when sqlite settings are empty", async () => {
+  const db = createTempDb();
+  setAppDatabaseForTesting(db);
+
+  const response = await handleFeishuPublishRequest();
+  const payload = response.body as {
+    error: { code: string; message: string };
+  };
+
+  assert.equal(response.status, 503);
+  assert.equal(payload.error.code, "missing_credentials");
+});
+
+test("feishu publish route returns validation_error when snapshot payload is invalid", async () => {
+  const db = createTempDb();
+  setAppDatabaseForTesting(db);
+  ensurePublishSettingsTable(db, getDefaultPublishCredentialSettings());
+  const repository = createPublishSettingsRepository(db);
+  repository.update("feishu_app_id", "cli_app_id");
+  repository.update("feishu_app_secret", "app-secret");
+
+  const response = await handleFeishuPublishRequest({
+    snapshot: {
+      schemaVersion: "v1",
+      platform: "wechat_article",
+      recordId: "record-1",
+      title: "",
+      blocks: [],
+    },
+  });
+  const payload = response.body as {
+    error: { code: string; message: string };
+  };
+
+  assert.equal(response.status, 400);
+  assert.equal(payload.error.code, "validation_error");
 });
 
 function createTempDb() {

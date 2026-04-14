@@ -6,7 +6,10 @@ import {
   normalizeRewriteText,
   RewriteSourceParseError,
 } from "../rewrite/rewrite-source.ts";
-import { parseRewriteFile } from "../rewrite/rewrite-file-parser.ts";
+import {
+  buildMammothDocxInput,
+  parseRewriteFile,
+} from "../rewrite/rewrite-file-parser.ts";
 
 test("normalizeRewriteText trims text and collapses excessive blank lines", () => {
   const normalized = normalizeRewriteText(
@@ -92,6 +95,20 @@ test("parseRewriteFile uses docx extractor for docx files", async () => {
     extractedText: "第一段\n\n第二段",
     charCount: "第一段\n\n第二段".length,
   });
+});
+
+test("buildMammothDocxInput uses Buffer for the node mammoth runtime", () => {
+  const bytes = new TextEncoder().encode("docx-binary");
+  const arrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  );
+
+  const input = buildMammothDocxInput(arrayBuffer);
+
+  assert.ok("buffer" in input);
+  assert.ok(Buffer.isBuffer(input.buffer));
+  assert.equal(input.buffer.toString("utf8"), "docx-binary");
 });
 
 test("parseRewriteFile rejects unsupported file types", async () => {

@@ -12,6 +12,9 @@ import {
 import { parseXiaohongshuPublishRequestPayload } from "./xiaohongshu-publish-service.ts";
 import { mapXiaohongshuSnapshotToPayload } from "./xiaohongshu-publish-mapper.ts";
 import { publishXiaohongshuNote } from "./xiaohongshu-publish-client.ts";
+import { parseFeishuPublishRequestPayload } from "./feishu-publish-service.ts";
+import { mapFeishuSnapshotToPayload } from "./feishu-publish-mapper.ts";
+import { publishFeishuDocument } from "./feishu-publish-client.ts";
 
 export async function handleWechatAccountsRequest() {
   try {
@@ -118,6 +121,38 @@ export async function handleXiaohongshuPublishRequest(
       { apiKey, baseUrl },
       publishPayload,
     );
+
+    return {
+      status: 200,
+      body: result,
+    };
+  } catch (error) {
+    return toPublishErrorResponse(error);
+  }
+}
+
+export async function handleFeishuPublishRequest(
+  payload?: unknown,
+  baseOrigin?: string,
+) {
+  try {
+    const appId = getPublishSetting("feishu_app_id").value.trim();
+    const appSecret = getPublishSetting("feishu_app_secret").value.trim();
+
+    if (!appId || !appSecret) {
+      throw new PublishServiceError(
+        "missing_credentials",
+        "未配置飞书文档发布凭证。",
+        503,
+      );
+    }
+
+    const parsedRequest = parseFeishuPublishRequestPayload(payload);
+    const publishPayload = mapFeishuSnapshotToPayload(
+      parsedRequest.snapshot,
+      baseOrigin || "http://localhost:3000",
+    );
+    const result = await publishFeishuDocument({ appId, appSecret }, publishPayload);
 
     return {
       status: 200,
