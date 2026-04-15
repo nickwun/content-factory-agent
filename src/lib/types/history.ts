@@ -136,6 +136,15 @@ export type GenerationMetadata = {
   settingsVersionByPlatform?: PromptSettingsVersionMap;
 };
 
+export type HistoryRecordTraceContext = {
+  sourceKind: "direct_create" | "rewrite_task";
+  topicClusterId?: string;
+  topicClusterTitle?: string;
+  rewriteTaskId?: string;
+  representativeArticleIds?: string[];
+  createdFromPlatform?: "wechat_article";
+};
+
 export type HistoryRecord = {
   id: string;
   schemaVersion: 1;
@@ -149,4 +158,5 @@ export type HistoryRecord = {
   generation: GenerationMetadata;
   content: PlatformContentMap;
   workspace: WorkspaceSnapshot;
+  traceContext?: HistoryRecordTraceContext;
 };

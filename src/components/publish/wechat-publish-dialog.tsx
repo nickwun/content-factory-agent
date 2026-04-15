@@ -3,6 +3,21 @@
 import { useEffect, useMemo, useState } from "react";
 
 import {
+  createPublishFailedEvent,
+  createPublishPartiallySucceededEvent,
+  createPublishStartedEvent,
+  createPublishSucceededEvent,
+  createRunId,
+  createExecutionEventStore,
+} from "@/lib/observability/execution-event-store";
+import {
+  createFailedPublishResult,
+  normalizeFeishuPublishResult,
+  normalizeWechatPublishResult,
+  resolveWechatPublishDestination,
+} from "@/lib/observability/publish-observability";
+import { createPublishResultStore } from "@/lib/observability/publish-result-store";
+import {
   buildFeishuPublishErrorMessage,
   buildWechatPublishErrorMessage,
   PublishRequestError,
@@ -32,6 +47,7 @@ type WechatPublishDialogProps = {
   onClose: () => void;
   onWechatSuccess: (result: WechatPublishResponse) => void;
   onFeishuSuccess: (result: FeishuPublishResponse) => void;
+  onPublishRecorded?: () => void;
 };
 
 export function WechatPublishDialog({
@@ -40,6 +56,7 @@ export function WechatPublishDialog({
   onClose,
   onWechatSuccess,
   onFeishuSuccess,
+  onPublishRecorded,
 }: WechatPublishDialogProps) {
   const [accounts, setAccounts] = useState<WechatPublishAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState("");
@@ -57,6 +74,8 @@ export function WechatPublishDialog({
     () => (record ? buildFeishuPublishPreviewChecks(record) : null),
     [record],
   );
+  const executionEventStore = useMemo(() => createExecutionEventStore(), []);
+  const publishResultStore = useMemo(() => createPublishResultStore(), []);
 
   useEffect(() => {
     if (!open) {
@@ -146,11 +165,68 @@ export function WechatPublishDialog({
     setSubmitting(true);
     setErrorMessage(null);
 
+    if (publishTarget !== "feishu" && (!selectedAccountId || !selectedPublishTypeOption?.enabled)) {
+      setSubmitting(false);
+      return;
+    }
+
+    const runId = createRunId("publish");
+    const publishResultId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+    const destination =
+      publishTarget === "feishu"
+        ? "feishu_doc"
+        : resolveWechatPublishDestination(publishType);
+
+    try {
+      await executionEventStore.append(
+        createPublishStartedEvent({
+          runId,
+          publishResultId,
+          destination,
+          createdAt: startedAt,
+        }),
+      );
+    } catch {
+      // Keep publish usable even if observability persistence fails.
+    }
+
     try {
       if (publishTarget === "feishu") {
         const result = await requestFeishuPublish(fetch, {
           snapshot: createFeishuPublishSnapshot(record),
         });
+
+        const normalizedResult = normalizeFeishuPublishResult({
+          publishResultId,
+          runId,
+          recordId: record.id,
+          response: result,
+          createdAt: new Date().toISOString(),
+        });
+
+        try {
+          await publishResultStore.append(normalizedResult);
+          await executionEventStore.append(
+            result.coverSyncStatus === "failed"
+              ? createPublishPartiallySucceededEvent({
+                  runId,
+                  publishResultId,
+                  destination: "feishu_doc",
+                  createdAt: normalizedResult.createdAt,
+                  coverSyncStatus: result.coverSyncStatus,
+                  message: normalizedResult.message,
+                })
+              : createPublishSucceededEvent({
+                  runId,
+                  publishResultId,
+                  destination: "feishu_doc",
+                  createdAt: normalizedResult.createdAt,
+                }),
+          );
+        } catch {
+          // Keep publish usable even if observability persistence fails.
+        }
 
         onFeishuSuccess(result);
       } else {
@@ -164,22 +240,75 @@ export function WechatPublishDialog({
           snapshot: createWechatPublishSnapshot(record),
         });
 
+        const normalizedResult = normalizeWechatPublishResult({
+          publishResultId,
+          runId,
+          recordId: record.id,
+          publishType,
+          response: result,
+          createdAt: new Date().toISOString(),
+        });
+
+        try {
+          await publishResultStore.append(normalizedResult);
+          await executionEventStore.append(
+            createPublishSucceededEvent({
+              runId,
+              publishResultId,
+              destination: normalizedResult.destination,
+              createdAt: normalizedResult.createdAt,
+            }),
+          );
+        } catch {
+          // Keep publish usable even if observability persistence fails.
+        }
+
         onWechatSuccess(result);
       }
 
       onClose();
     } catch (error) {
-      setErrorMessage(
+      const nextErrorMessage =
         publishTarget === "feishu"
           ? error instanceof PublishRequestError
             ? buildFeishuPublishErrorMessage(error)
             : "飞书文档发布失败，请稍后重试。"
           : error instanceof PublishRequestError
             ? buildWechatPublishErrorMessage(error)
-            : "公众号发布失败，请稍后重试。",
-      );
+            : "公众号发布失败，请稍后重试。";
+
+      setErrorMessage(nextErrorMessage);
+
+      try {
+        const failedResult = createFailedPublishResult({
+          publishResultId,
+          runId,
+          recordId: record.id,
+          destination,
+          createdAt: new Date().toISOString(),
+          errorCode:
+            error instanceof PublishRequestError ? error.code : undefined,
+          errorMessage: nextErrorMessage,
+        });
+
+        await publishResultStore.append(failedResult);
+        await executionEventStore.append(
+          createPublishFailedEvent({
+            runId,
+            publishResultId,
+            destination,
+            createdAt: failedResult.createdAt,
+            errorCode:
+              error instanceof PublishRequestError ? error.code : undefined,
+            message: nextErrorMessage,
+          }),
+        );
+      } catch {
+        // Keep publish usable even if observability persistence fails.
+      }
     } finally {
       setSubmitting(false);
+      onPublishRecorded?.();
     }
   }
 

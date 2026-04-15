@@ -7,12 +7,22 @@ import { AppShell } from "@/components/layout/app-shell";
 import { ArticleSourcePanel } from "@/components/home/article-source-panel";
 import { BatchRewritePanel } from "@/components/home/batch-rewrite-panel";
 import { createHistoryRecord } from "@/lib/history/history-record-factory";
+import {
+  createCoverGenerationFailedEvent,
+  createCoverGenerationSucceededEvent,
+  createDraftGeneratedEvent,
+  createFinalizationCompletedEvent,
+  createExecutionEventStore,
+  createRecordCreatedEvent,
+  createRunId,
+} from "@/lib/observability/execution-event-store";
 import { PromptPresetSelector } from "@/components/home/prompt-preset-selector";
 import { PublishQrDialog } from "@/components/publish/publish-qr-dialog";
 import { FeishuPublishResultDialog } from "@/components/publish/feishu-publish-result-dialog";
 import { WechatPublishDialog } from "@/components/publish/wechat-publish-dialog";
 import { XiaohongshuPublishDialog } from "@/components/publish/xiaohongshu-publish-dialog";
 import { WechatEditor } from "@/components/workspace/platform-editors/wechat-editor";
+import { ContentTracePanel } from "@/components/workspace/content-trace-panel";
 import { XiaohongshuEditor } from "@/components/workspace/platform-editors/xiaohongshu-editor";
 import { TwitterEditor } from "@/components/workspace/platform-editors/twitter-editor";
 import { VideoScriptEditor } from "@/components/workspace/platform-editors/video-script-editor";
@@ -33,6 +43,9 @@ import {
   requestGeneratedDraft,
 } from "@/lib/generation/generate-client";
 import type { GeneratedDraftResult } from "@/lib/generation/generation-service";
+import { buildContentTraceSummary } from "@/lib/observability/trace-summary";
+import { createPublishResultStore } from "@/lib/observability/publish-result-store";
+import type { ContentTraceSummary } from "@/lib/observability/types";
 import type {
   FeishuPublishResponse,
   XiaohongshuPublishResponse,
@@ -179,6 +192,10 @@ export function ContentAgentHome({
     useState<XiaohongshuPublishResponse | null>(null);
   const [feishuPublishResult, setFeishuPublishResult] =
     useState<FeishuPublishResponse | null>(null);
+  const [traceSummary, setTraceSummary] = useState<ContentTraceSummary | null>(
+    null,
+  );
+  const [traceSummaryVersion, setTraceSummaryVersion] = useState(0);
   const [mobileHistoryPanelState, setMobileHistoryPanelState] = useState<
     "closed" | "open"
   >("closed");
@@ -186,9 +203,60 @@ export function ContentAgentHome({
   const rewriteFileInputRef = useRef<HTMLInputElement | null>(null);
   const batchRewriteFileInputRef = useRef<HTMLInputElement | null>(null);
   const batchRewriteItemsRef = useRef<BatchRewriteItem[]>([]);
+  const executionEventStore = useMemo(() => createExecutionEventStore(), []);
+  const publishResultStore = useMemo(() => createPublishResultStore(), []);
   const requestedHomeScreenMode = resolveRequestedHomeScreenMode(
     initialRequestedHomeScreenMode,
   );
+
+  async function recordGenerationLifecycle(
+    nextRecord: HistoryRecord,
+    runId: string,
+  ) {
+    try {
+      const platform =
+        nextRecord.traceContext?.createdFromPlatform ??
+        nextRecord.selectedPlatforms[0];
+      const events = [
+        createRecordCreatedEvent({
+          runId,
+          recordId: nextRecord.id,
+          createdAt: nextRecord.createdAt,
+          platform,
+          modelName: nextRecord.generation.modelName,
+        }),
+        createDraftGeneratedEvent({
+          runId,
+          recordId: nextRecord.id,
+          createdAt: nextRecord.createdAt,
+          platform,
+          modelName: nextRecord.generation.modelName,
+        }),
+      ];
+
+      if (nextRecord.generation.wechatFinalizationApplied === true) {
+        events.push(
+          createFinalizationCompletedEvent({
+            runId,
+            recordId: nextRecord.id,
+            createdAt: nextRecord.createdAt,
+            platform,
+            modelName: nextRecord.generation.modelName,
+          }),
+        );
+      }
+
+      for (const event of events) {
+        await executionEventStore.append(event);
+      }
+    } catch {
+      // Keep the main creation flow usable even if observability persistence fails.
+    }
+  }
+
+  function refreshTraceSummary() {
+    setTraceSummaryVersion((current) => current + 1);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -233,6 +301,49 @@ export function ContentAgentHome({
     setComposerPinned(false);
     setScreenMode("workspace");
   }, [requestedHomeScreenMode]);
+
+  useEffect(() => {
+    if (!activeRecord) {
+      setTraceSummary(null);
+      return;
+    }
+
+    const record = activeRecord;
+    let cancelled = false;
+
+    async function loadTraceSummary() {
+      const publishResults = await publishResultStore.listByRecordId(record.id);
+      const historyEvents = await executionEventStore.listByEntity(
+        "history_record",
+        record.id,
+      );
+      const publishEvents = (
+        await Promise.all(
+          publishResults.map((result) =>
+            executionEventStore.listByEntity("publish_result", result.id),
+          ),
+        )
+      ).flat();
+
+      if (cancelled) {
+        return;
+      }
+
+      setTraceSummary(
+        buildContentTraceSummary({
+          record,
+          publishResults,
+          executionEvents: [...historyEvents, ...publishEvents],
+        }),
+      );
+    }
+
+    void loadTraceSummary();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeRecord, executionEventStore, publishResultStore, traceSummaryVersion]);
 
   const hasHistory = records.length > 0;
   const resolvedScreenMode = resolveHomeScreenMode({
@@ -329,6 +440,7 @@ export function ContentAgentHome({
       };
 
       const now = new Date().toISOString();
+      const runId = createRunId("generation");
       const nextRecord = createHistoryRecord({
         userPrompt,
         selectedPlatforms: composerSelectedPlatforms,
@@ -341,6 +453,7 @@ export function ContentAgentHome({
       });
 
       await createRecord(nextRecord);
+      await recordGenerationLifecycle(nextRecord, runId);
       setComposerPinned(false);
       setScreenMode("workspace");
       router.replace("/?view=workspace");
@@ -424,6 +537,7 @@ export function ContentAgentHome({
         };
 
         const now = new Date().toISOString();
+        const runId = createRunId("generation");
         const nextRecord = createHistoryRecord({
           userPrompt,
           selectedPlatforms: composerSelectedPlatforms,
@@ -436,6 +550,7 @@ export function ContentAgentHome({
         });
 
         await createRecord(nextRecord, { activate: false });
+        await recordGenerationLifecycle(nextRecord, runId);
         succeededCount += 1;
         setBatchRewriteItems((current) =>
           markBatchRewriteRunSucceeded(current, {
@@ -479,6 +594,8 @@ export function ContentAgentHome({
       return;
     }
 
+    const runId = createRunId("generation");
+
     updateActiveContent((current) => {
       const article = current.wechat_article;
 
@@ -513,6 +630,19 @@ export function ContentAgentHome({
           ),
         };
       });
+      try {
+        await executionEventStore.append(
+          createCoverGenerationSucceededEvent({
+            runId,
+            recordId: activeRecord.id,
+            createdAt: new Date().toISOString(),
+            platform: "wechat_article",
+          }),
+        );
+      } catch {
+        // Keep the cover flow usable even if observability persistence fails.
+      }
+      refreshTraceSummary();
       setToast("公众号头图已生成");
     } catch (error) {
       const errorMessage =
@@ -534,6 +664,24 @@ export function ContentAgentHome({
           }),
         };
       });
+      try {
+        await executionEventStore.append(
+          createCoverGenerationFailedEvent({
+            runId,
+            recordId: activeRecord.id,
+            createdAt: new Date().toISOString(),
+            platform: "wechat_article",
+            errorCode:
+              error instanceof GenerateWechatCoverRequestError
+                ? error.code
+                : undefined,
+            message: errorMessage,
+          }),
+        );
+      } catch {
+        // Keep the cover flow usable even if observability persistence fails.
+      }
+      refreshTraceSummary();
       setToast(errorMessage);
     }
   }
@@ -1064,6 +1212,7 @@ export function ContentAgentHome({
         open={wechatPublishDialogOpen}
         record={activeRecord ?? null}
         onClose={() => setWechatPublishDialogOpen(false)}
+        onPublishRecorded={refreshTraceSummary}
         onWechatSuccess={(result) => {
           setToast(result.message || "公众号文章已提交到草稿箱");
         }}
@@ -1075,6 +1224,7 @@ export function ContentAgentHome({
         open={xiaohongshuPublishDialogOpen}
         record={activeRecord ?? null}
         onClose={() => setXiaohongshuPublishDialogOpen(false)}
+        onPublishRecorded={refreshTraceSummary}
         onSuccess={(result) => {
           setPublishQrDialog(result);
         }}
@@ -1634,6 +1784,10 @@ export function ContentAgentHome({
                     </div>
                   </div>
                 </div>
+              </div>
+
+              <div className="mt-5 sm:mt-6">
+                <ContentTracePanel summary={traceSummary} />
               </div>
 
               <div className="mt-5 sm:mt-6">

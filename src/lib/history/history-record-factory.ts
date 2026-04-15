@@ -13,6 +13,7 @@ export function createHistoryRecord(input: {
   promptSettings: PlatformPromptSetting[];
   generationInfo: DraftGenerationInfo;
   rewriteSource?: RewriteSource | null;
+  traceContext?: HistoryRecord["traceContext"];
 }): HistoryRecord {
   const settingsByPlatform = Object.fromEntries(
     input.promptSettings.map((setting) => [setting.platform, setting]),
@@ -100,10 +101,27 @@ export function createHistoryRecord(input: {
       ),
     },
     content: input.content,
+    traceContext:
+      input.traceContext ?? {
+        sourceKind: "direct_create",
+        ...(resolveCreatedFromPlatform(input.selectedPlatforms)
+          ? {
+              createdFromPlatform: resolveCreatedFromPlatform(
+                input.selectedPlatforms,
+              ),
+            }
+          : {}),
+      },
     workspace: {
       activePlatform: input.selectedPlatforms[0] ?? "wechat_article",
       platformOrder: input.selectedPlatforms,
       lastViewedAt: input.now,
     },
   };
+}
+
+function resolveCreatedFromPlatform(selectedPlatforms: PlatformType[]) {
+  return selectedPlatforms.includes("wechat_article")
+    ? "wechat_article"
+    : undefined;
 }

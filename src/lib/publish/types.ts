@@ -18,6 +18,37 @@ export type PublishErrorCode =
 export type FeishuCoverSyncStatus = "synced" | "failed" | "skipped";
 export type FeishuCoverSyncFailureReason = "upload_failed" | "insert_failed";
 
+export type PublishDestination =
+  | "wechat_article"
+  | "wechat_xiaolvshu"
+  | "xiaohongshu_note"
+  | "feishu_doc";
+
+export type PublishResultStatus = "success" | "partial_success" | "failed";
+
+export type PublishResult = {
+  id: string;
+  runId: string;
+  recordId: string;
+  destination: PublishDestination;
+  status: PublishResultStatus;
+  resultId?: string;
+  resultUrl?: string;
+  message: string;
+  warningMessage?: string;
+  errorCode?: string;
+  errorMessage?: string;
+  createdAt: string;
+  metadata?: {
+    publishType?: string;
+    publicationId?: string;
+    materialId?: string;
+    qrcodeUrl?: string;
+    documentId?: string;
+    coverSyncStatus?: FeishuCoverSyncStatus;
+  };
+};
+
 export type WechatPublishAccount = {
   accountId: string;
   nickname: string;

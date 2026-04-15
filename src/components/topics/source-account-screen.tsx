@@ -8,6 +8,13 @@ import { requestGeneratedDraft, buildGenerateErrorMessage, GenerateRequestError 
 import { createLocalHistoryStorage } from "@/lib/history/local-history-storage";
 import { createHistoryRecord } from "@/lib/history/history-record-factory";
 import {
+  createDraftGeneratedEvent,
+  createFinalizationCompletedEvent,
+  createExecutionEventStore,
+  createRecordCreatedEvent,
+  createRunId,
+} from "@/lib/observability/execution-event-store";
+import {
   buildTopicOverviewStats,
   buildTopicClusterHeaderMeta,
   getTopicClusterStatusSortOrder,
@@ -122,6 +129,7 @@ export function SourceAccountScreen({
   const [reactivatingClusterId, setReactivatingClusterId] = useState<string | null>(null);
   const [rowStatus, setRowStatus] = useState<Record<string, string>>({});
   const historyStorage = useMemo(() => createLocalHistoryStorage(), []);
+  const executionEventStore = useMemo(() => createExecutionEventStore(), []);
 
   const groupedAccounts = useMemo(
     () => ({
@@ -163,6 +171,51 @@ export function SourceAccountScreen({
   const showOverview = view === "overview";
   const showSources = view === "sources";
   const showArticles = view === "articles";
+
+  async function recordGenerationLifecycle(
+    nextRecord: ReturnType<typeof createHistoryRecord>,
+    runId: string,
+  ) {
+    try {
+      const platform =
+        nextRecord.traceContext?.createdFromPlatform ??
+        nextRecord.selectedPlatforms[0];
+      const events = [
+        createRecordCreatedEvent({
+          runId,
+          recordId: nextRecord.id,
+          createdAt: nextRecord.createdAt,
+          platform,
+          modelName: nextRecord.generation.modelName,
+        }),
+        createDraftGeneratedEvent({
+          runId,
+          recordId: nextRecord.id,
+          createdAt: nextRecord.createdAt,
+          platform,
+          modelName: nextRecord.generation.modelName,
+        }),
+      ];
+
+      if (nextRecord.generation.wechatFinalizationApplied === true) {
+        events.push(
+          createFinalizationCompletedEvent({
+            runId,
+            recordId: nextRecord.id,
+            createdAt: nextRecord.createdAt,
+            platform,
+            modelName: nextRecord.generation.modelName,
+          }),
+        );
+      }
+
+      for (const event of events) {
+        await executionEventStore.append(event);
+      }
+    } catch {
+      // Observability persistence should not block rewrite-task handoff.
+    }
+  }
 
   async function handleCreateAccount() {
     setCreateState("saving");
@@ -472,6 +525,7 @@ export function SourceAccountScreen({
 
       const result = await requestGeneratedDraft(fetch, createData.generatePayload);
       const now = new Date().toISOString();
+      const runId = createRunId("generation");
       const nextRecord = createHistoryRecord({
         userPrompt: createData.generatePayload.userPrompt,
         selectedPlatforms: [...createData.generatePayload.selectedPlatforms],
@@ -481,9 +535,19 @@ export function SourceAccountScreen({
         promptSettings: result.promptSettings,
         generationInfo: result.draft.generationInfo,
         rewriteSource: createData.generatePayload.rewriteSource,
+        traceContext: {
+          sourceKind: "rewrite_task",
+          topicClusterId: clusterId,
+          topicClusterTitle: createData.rewriteTask.brief.topicTitle,
+          rewriteTaskId: createData.rewriteTask.id,
+          representativeArticleIds:
+            createData.rewriteTask.brief.representativeArticleIds,
+          createdFromPlatform: "wechat_article",
+        },
       });
 
       await historyStorage.create(nextRecord);
+      await recordGenerationLifecycle(nextRecord, runId);
 
       const completeResponse = await fetch(
         `/api/topics/rewrite-tasks/${createData.rewriteTask.id}`,

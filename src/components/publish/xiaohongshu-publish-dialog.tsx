@@ -3,6 +3,18 @@
 import { useMemo, useState } from "react";
 
 import {
+  createExecutionEventStore,
+  createPublishFailedEvent,
+  createPublishStartedEvent,
+  createPublishSucceededEvent,
+  createRunId,
+} from "@/lib/observability/execution-event-store";
+import {
+  createFailedPublishResult,
+  normalizeXiaohongshuPublishResult,
+} from "@/lib/observability/publish-observability";
+import { createPublishResultStore } from "@/lib/observability/publish-result-store";
+import {
   buildXiaohongshuPublishErrorMessage,
   PublishRequestError,
   requestXiaohongshuPublish,
@@ -19,6 +31,7 @@ type XiaohongshuPublishDialogProps = {
   record: HistoryRecord | null;
   onClose: () => void;
   onSuccess: (result: XiaohongshuPublishResponse) => void;
+  onPublishRecorded?: () => void;
 };
 
 export function XiaohongshuPublishDialog({
@@ -26,6 +39,7 @@ export function XiaohongshuPublishDialog({
   record,
   onClose,
   onSuccess,
+  onPublishRecorded,
 }: XiaohongshuPublishDialogProps) {
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -34,6 +48,8 @@ export function XiaohongshuPublishDialog({
     () => (record ? buildXiaohongshuPublishPreviewChecks(record) : null),
     [record],
   );
+  const executionEventStore = useMemo(() => createExecutionEventStore(), []);
+  const publishResultStore = useMemo(() => createPublishResultStore(), []);
 
   if (!open || !record) {
     return null;
@@ -47,21 +63,90 @@ export function XiaohongshuPublishDialog({
     setSubmitting(true);
     setErrorMessage(null);
 
+    const runId = createRunId("publish");
+    const publishResultId = crypto.randomUUID();
+    const startedAt = new Date().toISOString();
+
+    try {
+      await executionEventStore.append(
+        createPublishStartedEvent({
+          runId,
+          publishResultId,
+          destination: "xiaohongshu_note",
+          createdAt: startedAt,
+        }),
+      );
+    } catch {
+      // Keep publish usable even if observability persistence fails.
+    }
+
     try {
       const result = await requestXiaohongshuPublish(fetch, {
         snapshot: createXiaohongshuPublishSnapshot(record),
       });
 
+      const normalizedResult = normalizeXiaohongshuPublishResult({
+        publishResultId,
+        runId,
+        recordId: record.id,
+        response: result,
+        createdAt: new Date().toISOString(),
+      });
+
+      try {
+        await publishResultStore.append(normalizedResult);
+        await executionEventStore.append(
+          createPublishSucceededEvent({
+            runId,
+            publishResultId,
+            destination: "xiaohongshu_note",
+            createdAt: normalizedResult.createdAt,
+          }),
+        );
+      } catch {
+        // Keep publish usable even if observability persistence fails.
+      }
+
       onSuccess(result);
       onClose();
     } catch (error) {
-      setErrorMessage(
+      const nextErrorMessage =
         error instanceof PublishRequestError
           ? buildXiaohongshuPublishErrorMessage(error)
-          : "小红书发布失败，请稍后重试。",
-      );
+          : "小红书发布失败，请稍后重试。";
+
+      setErrorMessage(nextErrorMessage);
+
+      try {
+        const failedResult = createFailedPublishResult({
+          publishResultId,
+          runId,
+          recordId: record.id,
+          destination: "xiaohongshu_note",
+          createdAt: new Date().toISOString(),
+          errorCode:
+            error instanceof PublishRequestError ? error.code : undefined,
+          errorMessage: nextErrorMessage,
+        });
+
+        await publishResultStore.append(failedResult);
+        await executionEventStore.append(
+          createPublishFailedEvent({
+            runId,
+            publishResultId,
+            destination: "xiaohongshu_note",
+            createdAt: failedResult.createdAt,
+            errorCode:
+              error instanceof PublishRequestError ? error.code : undefined,
+            message: nextErrorMessage,
+          }),
+        );
+      } catch {
+        // Keep publish usable even if observability persistence fails.
+      }
     } finally {
       setSubmitting(false);
+      onPublishRecorded?.();
     }
   }
 
