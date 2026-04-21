@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState, type Dispatch, type SetStateAction } from "react";
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from "react";
 
 import { requestGeneratedDraft, buildGenerateErrorMessage, GenerateRequestError } from "@/lib/generation/generate-client";
 import { createLocalHistoryStorage } from "@/lib/history/local-history-storage";
@@ -30,6 +30,7 @@ import {
   type FileImportDraft,
   type ManualImportDraft,
 } from "@/lib/topics/topic-import-draft";
+import type { PlatformPromptSetting } from "@/lib/settings/prompt-settings-types";
 import type {
   CandidateArticle,
   RewriteTask,
@@ -128,8 +129,38 @@ export function SourceAccountScreen({
   const [rejectingClusterId, setRejectingClusterId] = useState<string | null>(null);
   const [reactivatingClusterId, setReactivatingClusterId] = useState<string | null>(null);
   const [rowStatus, setRowStatus] = useState<Record<string, string>>({});
+  const [promptPresets, setPromptPresets] = useState<PlatformPromptSetting[]>([]);
+  const [selectedPromptPresetId, setSelectedPromptPresetId] = useState("");
   const historyStorage = useMemo(() => createLocalHistoryStorage(), []);
   const executionEventStore = useMemo(() => createExecutionEventStore(), []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const response = await fetch("/api/prompt-presets?platforms=wechat_article");
+        if (!response.ok) {
+          throw new Error("load prompt presets failed");
+        }
+
+        const data = (await response.json()) as {
+          presetGroups: Array<{ platform: string; presets: PlatformPromptSetting[] }>;
+        };
+        if (!cancelled) {
+          setPromptPresets(data.presetGroups[0]?.presets ?? []);
+        }
+      } catch {
+        if (!cancelled) {
+          setPromptPresets([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const groupedAccounts = useMemo(
     () => ({
@@ -497,7 +528,12 @@ export function SourceAccountScreen({
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ clusterId }),
+        body: JSON.stringify({
+          clusterId,
+          ...(selectedPromptPresetId
+            ? { promptPresetId: selectedPromptPresetId }
+            : {}),
+        }),
       });
       const createData = (await createResponse.json()) as
         | {
@@ -526,8 +562,11 @@ export function SourceAccountScreen({
       const result = await requestGeneratedDraft(fetch, createData.generatePayload);
       const now = new Date().toISOString();
       const runId = createRunId("generation");
+      const resolvedUserPrompt =
+        createData.generatePayload.userPrompt ??
+        "已根据主题素材和提示词预设自动组织仿写输入。";
       const nextRecord = createHistoryRecord({
-        userPrompt: createData.generatePayload.userPrompt,
+        userPrompt: resolvedUserPrompt,
         selectedPlatforms: [...createData.generatePayload.selectedPlatforms],
         now,
         autoTitle: result.draft.autoTitle,
@@ -763,6 +802,20 @@ export function SourceAccountScreen({
               <h3 className="mt-2 text-lg font-semibold text-slate-900">进入候选文章</h3>
               <p className="mt-2 text-sm leading-7 text-slate-500">
                 手动导入、文件导入、多文件汇总，以及查看最近入库的候选文章与绑定样本源。
+              </p>
+            </Link>
+            <Link
+              href="/topics/wechat-hot"
+              className="rounded-[24px] border border-black/10 bg-stone-50 px-5 py-5 transition hover:border-slate-300 hover:bg-white"
+            >
+              <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                Wechat Hot
+              </p>
+              <h3 className="mt-2 text-lg font-semibold text-slate-900">
+                公众号爆款抓取
+              </h3>
+              <p className="mt-2 text-sm leading-7 text-slate-500">
+                进入独立模块，完成外部公众号爆款文章抓取、正文补拉、结构化分析，并将选中的素材送进创作中心仿写。
               </p>
             </Link>
           </div>
@@ -1280,31 +1333,56 @@ export function SourceAccountScreen({
                         : null}
                   </div>
                   {cluster.status === "open" ? (
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => void handleRejectCluster(cluster.id)}
-                        disabled={
-                          runningClusterId !== null ||
-                          rejectingClusterId !== null ||
-                          reactivatingClusterId !== null
-                        }
-                        className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {rejectingClusterId === cluster.id ? "忽略中..." : "驳回 / 忽略"}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => void handleStartRewriteTask(cluster.id)}
-                        disabled={
-                          runningClusterId !== null ||
-                          rejectingClusterId !== null ||
-                          reactivatingClusterId !== null
-                        }
-                        className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {runningClusterId === cluster.id ? "仿写中..." : "通过进入仿写"}
-                      </button>
+                    <div className="flex flex-1 flex-wrap items-center justify-end gap-3">
+                      <label className="flex min-w-[260px] flex-col gap-2">
+                        <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
+                          提示词预设（可选）
+                        </span>
+                        <select
+                          value={selectedPromptPresetId}
+                          onChange={(event) => setSelectedPromptPresetId(event.target.value)}
+                          disabled={
+                            runningClusterId !== null ||
+                            rejectingClusterId !== null ||
+                            reactivatingClusterId !== null
+                          }
+                          className="rounded-2xl border border-black/10 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          <option value="">不使用额外提示词预设（保持原样）</option>
+                          {promptPresets.map((preset) => (
+                            <option key={preset.id} value={preset.id}>
+                              {preset.name}
+                              {preset.isDefault ? "（默认）" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => void handleRejectCluster(cluster.id)}
+                          disabled={
+                            runningClusterId !== null ||
+                            rejectingClusterId !== null ||
+                            reactivatingClusterId !== null
+                          }
+                          className="rounded-full border border-black/10 bg-white px-4 py-2 text-sm font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {rejectingClusterId === cluster.id ? "忽略中..." : "驳回 / 忽略"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleStartRewriteTask(cluster.id)}
+                          disabled={
+                            runningClusterId !== null ||
+                            rejectingClusterId !== null ||
+                            reactivatingClusterId !== null
+                          }
+                          className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {runningClusterId === cluster.id ? "仿写中..." : "通过进入仿写"}
+                        </button>
+                      </div>
                     </div>
                   ) : cluster.status === "rejected" ? (
                     <div className="flex flex-wrap items-center gap-3">

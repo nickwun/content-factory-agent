@@ -876,7 +876,7 @@ function buildLongformWechatUserPrompt(input: WechatRewritePromptInput) {
 
 function buildStandardWechatUserPrompt(userPrompt: string) {
   return [
-    "请根据下面的创作需求，生成一篇中文公众号文章。",
+    "请根据下面的仿写输入，生成一篇中文公众号文章。",
     "要求：",
     "1. 保持中文表达自然、结构清楚、适合公众号长文阅读。",
     "2. 只返回一个 JSON 对象，不要输出任何额外解释、前言、后记或 markdown 代码块。",
@@ -887,7 +887,7 @@ function buildStandardWechatUserPrompt(userPrompt: string) {
     buildWechatDraftLengthBudgetSection(),
     buildWechatTemplateBlacklistSection(),
     "",
-    `创作需求：${userPrompt}`,
+    `仿写输入：${userPrompt}`,
   ].join("\n");
 }
 
@@ -965,7 +965,7 @@ function buildLongformTwitterUserPrompt(input: LongformRewritePromptInput) {
 
 function buildStandardTwitterUserPrompt(userPrompt: string) {
   return [
-    "请根据下面的创作需求，生成一组适合 Twitter/X 的中文内容草稿。",
+    "请根据下面的仿写输入，生成一组适合 Twitter/X 的中文内容草稿。",
     "要求：",
     '1. 只返回一个 JSON 对象，不要输出任何额外解释、前言、后记或 markdown。',
     '2. JSON 格式必须为：{"recommendedMode":"single|thread","singleDraft":"...","threadDraft":["..."]}。',
@@ -974,7 +974,7 @@ function buildStandardTwitterUserPrompt(userPrompt: string) {
     "5. threadDraft 中每条都应该像独立 tweet，可连贯阅读，但不要重复。",
     "6. 用中文输出，表达简洁、观点明确、适合社交平台传播。",
     "",
-    `创作需求：${userPrompt}`,
+    `仿写输入：${userPrompt}`,
   ].join("\n");
 }
 
@@ -1090,7 +1090,7 @@ function buildLongformXiaohongshuUserPrompt(
 
 function buildStandardXiaohongshuUserPrompt(userPrompt: string) {
   return [
-    "请根据下面的创作需求，生成一篇适合小红书发布的中文图文草稿。",
+    "请根据下面的仿写输入，生成一篇适合小红书发布的中文图文草稿。",
     "要求：",
     '1. 只返回一个 JSON 对象，不要输出任何额外解释、前言、后记或 markdown。',
     '2. JSON 格式必须为：{"title":"...","caption":"...","imageSuggestions":[{"title":"...","description":"..."}],"tags":["..."]}。',
@@ -1100,7 +1100,7 @@ function buildStandardXiaohongshuUserPrompt(userPrompt: string) {
     "6. tags 使用不带 # 的简短中文标签。",
     "7. 用中文输出，强调图文感、经验感和可读性。",
     "",
-    `创作需求：${userPrompt}`,
+    `仿写输入：${userPrompt}`,
   ].join("\n");
 }
 
@@ -1330,7 +1330,7 @@ function buildFallbackXiaohongshuBodySections(
 
 function buildStandardVideoScriptUserPrompt(userPrompt: string) {
   return [
-    "请根据下面的创作需求，生成一份适合短视频创作的中文结构化脚本。",
+    "请根据下面的仿写输入，生成一份适合短视频创作的中文结构化脚本。",
     "要求：",
     '1. 只返回一个 JSON 对象，不要输出任何额外解释、前言、后记或 markdown。',
     '2. JSON 格式必须为：{"title":"...","duration":"...","scenes":[{"shot":"...","voiceover":"..."}]}。',
@@ -1339,7 +1339,7 @@ function buildStandardVideoScriptUserPrompt(userPrompt: string) {
     "5. shot 要写清楚画面、镜头或动作，voiceover 要像可直接继续编辑的口播文案。",
     "6. 用中文输出，节奏明确，适合短视频内容创作，不要写成长文提纲。",
     "",
-    `创作需求：${userPrompt}`,
+    `仿写输入：${userPrompt}`,
   ].join("\n");
 }
 

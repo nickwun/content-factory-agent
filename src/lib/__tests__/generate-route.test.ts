@@ -8,17 +8,95 @@ import {
 } from "../generation/generate-route.ts";
 import { MAX_REWRITE_SOURCE_CHARS } from "../rewrite/rewrite-source.ts";
 
-test("generate route parser keeps invalid request behavior unchanged when rewriteSource is absent", () => {
+test("generate route parser rejects direct generation requests without rewriteSource", () => {
   assert.throws(
     () =>
       parseGenerateRequestPayload({
-        userPrompt: "",
+        userPrompt: "写一篇不带素材的普通文章",
         selectedPlatforms: ["wechat_article"],
       }),
     (error: unknown) =>
       error instanceof GenerateRequestValidationError &&
-      error.message === "userPrompt and selectedPlatforms are required",
+      error.message === "当前已下线无素材直接生成，请先提供素材并选择提示词预设。",
   );
+});
+
+test("generate route parser rejects composer rewrite requests without rewriteSource", () => {
+  assert.throws(
+    () =>
+      parseGenerateRequestPayload({
+        requestSource: "composer_rewrite",
+        selectedPlatforms: ["wechat_article"],
+        selectedPromptPresetByPlatform: {
+          wechat_article: "preset-1",
+        },
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      error.message === "新建内容页仿写请求必须先提供素材。",
+  );
+});
+
+test("generate route parser rejects composer rewrite requests without promptPresetId", () => {
+  assert.throws(
+    () =>
+      parseGenerateRequestPayload({
+        requestSource: "composer_rewrite",
+        selectedPlatforms: ["wechat_article"],
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      error.message === "新建内容页仿写请求必须先选择提示词预设。",
+  );
+});
+
+test("generate route parser rejects legacy handwritten userPrompt on composer rewrite requests", () => {
+  assert.throws(
+    () =>
+      parseGenerateRequestPayload({
+        requestSource: "composer_rewrite",
+        userPrompt: "请帮我写得更像专栏文章",
+        selectedPlatforms: ["wechat_article"],
+        selectedPromptPresetByPlatform: {
+          wechat_article: "preset-1",
+        },
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      error.message === "新建内容页不再支持前台手写仿写要求，请直接选择提示词预设后开始仿写。",
+  );
+});
+
+test("generate route parser accepts composer rewrite requests with source marker and preset selection", () => {
+  const parsed = parseGenerateRequestPayload({
+    requestSource: "composer_rewrite",
+    selectedPlatforms: ["wechat_article"],
+    selectedPromptPresetByPlatform: {
+      wechat_article: "preset-1",
+    },
+    rewriteSource: {
+      kind: "pasted_text",
+      extractedText: "原文第一段\n\n原文第二段",
+      charCount: 12,
+    },
+  });
+
+  assert.equal(parsed.requestSource, "composer_rewrite");
+  assert.equal(parsed.userPrompt, "");
+  assert.deepEqual(parsed.selectedPlatforms, ["wechat_article"]);
+  assert.deepEqual(parsed.selectedPromptPresetByPlatform, {
+    wechat_article: "preset-1",
+  });
 });
 
 test("generate route parser rejects rewriteSource when extracted text becomes empty after cleaning", () => {
@@ -108,6 +186,11 @@ test("generate route parser rejects invalid selectedPromptPresetByPlatform paylo
       parseGenerateRequestPayload({
         userPrompt: "请生成",
         selectedPlatforms: ["wechat_article"],
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
         selectedPromptPresetByPlatform: {
           wechat_article: "",
         },
@@ -124,6 +207,11 @@ test("generate route parser rejects invalid wechatFinalization payloads", () => 
       parseGenerateRequestPayload({
         userPrompt: "请生成",
         selectedPlatforms: ["wechat_article"],
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
         wechatFinalization: {
           enabled: true,
           targetMinWords: "1100",

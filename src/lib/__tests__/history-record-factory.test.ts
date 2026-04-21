@@ -81,3 +81,39 @@ test("createHistoryRecord keeps rewrite-task traceContext when explicitly provid
     createdFromPlatform: "wechat_article",
   });
 });
+
+test("createHistoryRecord keeps external-rewrite-task traceContext when explicitly provided", () => {
+  const record = createHistoryRecord({
+    userPrompt: "请基于这些外部爆款文章重构一篇公众号长文",
+    selectedPlatforms: ["wechat_article"],
+    now: "2026-04-15T09:20:00.000Z",
+    autoTitle: "第一次全马前一周，真正需要准备的是什么",
+    content: {
+      wechat_article: {
+        platform: "wechat_article",
+        title: "第一次全马前一周，真正需要准备的是什么",
+        markdownBody: "正文",
+        blocks: [{ id: "p-1", type: "paragraph", text: "正文" }],
+      },
+    },
+    promptSettings,
+    generationInfo,
+    traceContext: {
+      sourceKind: "external_rewrite_task",
+      externalRewriteTaskId: "external-task-1",
+      externalKeyword: "马拉松",
+      representativeArticleIds: ["article-1", "article-2", "article-3"],
+      externalArticleCount: 3,
+      createdFromPlatform: "wechat_article",
+    },
+  });
+
+  assert.deepEqual(record.traceContext, {
+    sourceKind: "external_rewrite_task",
+    externalRewriteTaskId: "external-task-1",
+    externalKeyword: "马拉松",
+    representativeArticleIds: ["article-1", "article-2", "article-3"],
+    externalArticleCount: 3,
+    createdFromPlatform: "wechat_article",
+  });
+});

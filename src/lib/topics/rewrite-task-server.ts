@@ -1,4 +1,6 @@
 import { getAppDatabase } from "../db/sqlite.ts";
+import { buildPromptPresetInput, PromptPresetError } from "../settings/prompt-settings-server.ts";
+import type { PromptPresetInput } from "../rewrite/prompt-preset-input.ts";
 import {
   createCandidateArticleRepository,
   ensureCandidateArticlesTable,
@@ -29,12 +31,28 @@ function getRewriteTaskService() {
   });
 }
 
+function resolvePromptPresetInput(
+  promptPresetId?: string,
+): PromptPresetInput | undefined {
+  if (!promptPresetId) {
+    return undefined;
+  }
+
+  return buildPromptPresetInput(promptPresetId);
+}
+
 export function listRewriteTasks() {
   return getRewriteTaskService().listRewriteTasks();
 }
 
-export function startRewriteTaskFromCluster(clusterId: string) {
-  return getRewriteTaskService().startRewriteTaskFromCluster(clusterId);
+export function startRewriteTaskFromCluster(
+  clusterId: string,
+  promptPresetId?: string,
+) {
+  return getRewriteTaskService().startRewriteTaskFromCluster(
+    clusterId,
+    resolvePromptPresetInput(promptPresetId),
+  );
 }
 
 export function completeRewriteTask(input: {
@@ -48,4 +66,4 @@ export function failRewriteTask(input: { taskId: string; errorMessage: string })
   return getRewriteTaskService().failRewriteTask(input);
 }
 
-export { RewriteTaskError };
+export { PromptPresetError, RewriteTaskError };

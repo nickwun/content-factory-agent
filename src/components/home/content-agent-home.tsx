@@ -55,6 +55,7 @@ import {
   buildRewriteSourceErrorMessage,
   buildRewriteSourceNotice,
 } from "@/lib/rewrite/article-source-ui";
+import { buildComposerRewriteUserPrompt } from "@/lib/rewrite/prompt-preset-input";
 import { buildWechatFinalizationOptions } from "@/lib/generation/wechat-finalization";
 import {
   buildBatchRewriteSelectionMessage,
@@ -151,7 +152,6 @@ export function ContentAgentHome({
     "composer",
   );
   const [composerPinned, setComposerPinned] = useState(false);
-  const [userPrompt, setUserPrompt] = useState("");
   const [rewriteComposerMode, setRewriteComposerMode] =
     useState<RewriteComposerMode>("single");
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformType[]>([]);
@@ -367,6 +367,14 @@ export function ContentAgentHome({
     (item) => item.parseStatus === "ready",
   );
   const batchProgress = buildBatchRewriteProgress(executableBatchItems);
+  const hasRequiredRewriteSource = isBatchComposerMode
+    ? executableBatchItems.length > 0
+    : Boolean(rewriteSource);
+  const hasRequiredPromptPresets =
+    composerSelectedPlatforms.length > 0 &&
+    composerSelectedPlatforms.every((platform) =>
+      Boolean(selectedPromptPresetByPlatform[platform]),
+    );
 
   useEffect(() => {
     batchRewriteItemsRef.current = batchRewriteItems;
@@ -404,7 +412,11 @@ export function ContentAgentHome({
       return;
     }
 
-    if (!userPrompt.trim() || composerSelectedPlatforms.length === 0) {
+    if (
+      !rewriteSource ||
+      composerSelectedPlatforms.length === 0 ||
+      !hasRequiredPromptPresets
+    ) {
       return;
     }
 
@@ -427,9 +439,9 @@ export function ContentAgentHome({
       const data = (await requestGeneratedDraft(
         fetch,
         buildGenerateRequestPayload({
-          userPrompt,
+          requestSource: "composer_rewrite",
           selectedPlatforms: composerSelectedPlatforms,
-          ...(rewriteSource ? { rewriteSource } : {}),
+          rewriteSource,
           selectedPromptPresetByPlatform:
             resolvedPromptPresetSelection.selectedPromptPresetByPlatform,
           ...(wechatFinalization ? { wechatFinalization } : {}),
@@ -441,8 +453,12 @@ export function ContentAgentHome({
 
       const now = new Date().toISOString();
       const runId = createRunId("generation");
+      const resolvedUserPrompt = buildComposerRewriteUserPrompt({
+        selectedPromptSettings: data.promptSettings,
+        rewriteSource,
+      });
       const nextRecord = createHistoryRecord({
-        userPrompt,
+        userPrompt: resolvedUserPrompt,
         selectedPlatforms: composerSelectedPlatforms,
         now,
         autoTitle: data.draft.autoTitle,
@@ -479,15 +495,21 @@ export function ContentAgentHome({
   }
 
   async function handleBatchGenerate() {
-    if (!userPrompt.trim()) {
-      setGenerateState("error");
-      setGenerateMessage("先输入这一批素材共用的仿写要求。");
-      return;
-    }
-
     if (executableBatchItems.length === 0) {
       setGenerateState("error");
       setGenerateMessage("先至少准备 1 篇可解析的素材，再开始批量仿写。");
+      return;
+    }
+
+    if (composerSelectedPlatforms.length === 0) {
+      setGenerateState("error");
+      setGenerateMessage("先至少选择一个输出平台，再开始批量仿写。");
+      return;
+    }
+
+    if (!hasRequiredPromptPresets) {
+      setGenerateState("error");
+      setGenerateMessage("先为当前批次要输出的平台选择提示词预设。");
       return;
     }
 
@@ -524,7 +546,7 @@ export function ContentAgentHome({
         const data = (await requestGeneratedDraft(
           fetch,
           buildGenerateRequestPayload({
-            userPrompt,
+            requestSource: "composer_rewrite",
             selectedPlatforms: composerSelectedPlatforms,
             rewriteSource: nextItem.rewriteSource,
             selectedPromptPresetByPlatform:
@@ -538,8 +560,12 @@ export function ContentAgentHome({
 
         const now = new Date().toISOString();
         const runId = createRunId("generation");
+        const resolvedUserPrompt = buildComposerRewriteUserPrompt({
+          selectedPromptSettings: data.promptSettings,
+          rewriteSource: nextItem.rewriteSource,
+        });
         const nextRecord = createHistoryRecord({
-          userPrompt,
+          userPrompt: resolvedUserPrompt,
           selectedPlatforms: composerSelectedPlatforms,
           now,
           autoTitle: data.draft.autoTitle,
@@ -1266,7 +1292,7 @@ export function ContentAgentHome({
                 先仿写，再进入多平台工作区继续编辑
               </h1>
               <p className="mt-4 max-w-2xl text-[15px] leading-8 text-slate-600">
-                现在首页的主任务已经切到仿写优先。你可以先上传或粘贴原文，再按平台和风格预设生成可继续编辑的草稿。
+                本页只支持基于素材仿写。先上传原文或素材，再选择提示词预设，系统会自动带入 preset 的 prompt 和语料摘要开始仿写。
               </p>
 
               <div className="mt-8 space-y-5">
@@ -1277,11 +1303,11 @@ export function ContentAgentHome({
                         Step 1
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                        上传原文或直接粘贴，优先走仿写主链路
+                        先准备素材，再进入仿写
                       </h2>
                     </div>
                     <p className="text-sm leading-7 text-slate-400">
-                      有原文时，这里是仿写主区；没原文时，仍可按普通生成继续工作。
+                      本页只支持基于素材仿写，不支持无素材直接生成。
                     </p>
                   </div>
 
@@ -1342,7 +1368,7 @@ export function ContentAgentHome({
                   ) : (
                     <>
                       <p className="mt-3 text-sm leading-7 text-slate-500">
-                        先加载原文，再写仿写要求会更高效。若不提供原文，下面的需求也会继续作为普通创作需求生效。
+                        先上传原文或素材，再选择提示词预设。系统会自动带入该预设的 prompt 和绑定语料摘要开始仿写。
                       </p>
 
                       <ArticleSourcePanel
@@ -1370,33 +1396,6 @@ export function ContentAgentHome({
                       />
                     </>
                   )}
-
-                  <div className="mt-5 rounded-[24px] border border-black/8 bg-white/92 p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-                          仿写要求 / 创作需求
-                        </p>
-                        <p className="mt-2 text-sm leading-7 text-slate-500">
-                          有原文时，这里写改写方向和风格要求；没有原文时，这里就是普通生成的需求描述。
-                        </p>
-                      </div>
-                    </div>
-
-                    <textarea
-                      value={userPrompt}
-                      disabled={batchGenerateState === "running"}
-                      onChange={(event) => setUserPrompt(event.target.value)}
-                      placeholder={
-                        isBatchComposerMode
-                          ? "例如：把这一批素材都仿写成克制理性的公众号长文，结构完整、标题稳重，不要写成短促爆文。"
-                          : rewriteSource
-                          ? "例如：仿写成一篇关于写作延缓衰老的公众号长文，结构完整但表达更克制理性。"
-                          : "例如：写一篇关于如何提高工作效率的内容，面向 25-35 岁职场人，语气专业但不生硬，同时生成公众号长文和小红书笔记。"
-                      }
-                      className="mt-4 min-h-56 w-full resize-y rounded-[28px] border border-slate-200 bg-white px-6 py-5 text-lg leading-8 outline-none shadow-[inset_0_1px_0_rgba(255,255,255,0.7)] placeholder:text-slate-300 focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
-                    />
-                  </div>
                 </div>
 
                 <div className="rounded-[34px] border border-slate-200 bg-white/94 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
@@ -1406,11 +1405,11 @@ export function ContentAgentHome({
                         Step 2
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                        选择输出平台和当前风格预设
+                        选择输出平台和提示词预设
                       </h2>
                     </div>
                     <p className="text-sm leading-7 text-slate-500">
-                      先选平台，再为当前已选平台指定要使用的提示词预设。
+                      先选平台，再为当前已选平台明确指定要使用的提示词预设。
                     </p>
                   </div>
 
@@ -1514,10 +1513,10 @@ export function ContentAgentHome({
                         Step 3
                       </p>
                       <h2 className="mt-2 text-xl font-semibold">
-                        生成内容并进入工作区继续编辑
+                        开始仿写并进入工作区继续编辑
                       </h2>
                       <p className="mt-2 text-sm leading-7 text-slate-500">
-                        这是次级区：如果没有加载原文，也会继续按普通生成逻辑工作，不会把首页变成只能仿写。
+                        只要素材和提示词预设都准备好，就可以直接开始仿写并进入后续编辑。
                       </p>
                     </div>
 
@@ -1526,7 +1525,8 @@ export function ContentAgentHome({
                         type="button"
                         onClick={handleGenerate}
                         disabled={
-                          !userPrompt.trim() ||
+                          !hasRequiredRewriteSource ||
+                          !hasRequiredPromptPresets ||
                           composerSelectedPlatforms.length === 0 ||
                           (isBatchComposerMode
                             ? executableBatchItems.length === 0 ||
@@ -1534,7 +1534,8 @@ export function ContentAgentHome({
                             : generateState === "generating")
                         }
                         className={`inline-flex items-center justify-center rounded-full px-6 py-3.5 text-base font-semibold transition ${
-                          !userPrompt.trim() ||
+                          !hasRequiredRewriteSource ||
+                          !hasRequiredPromptPresets ||
                           composerSelectedPlatforms.length === 0 ||
                           (isBatchComposerMode
                             ? executableBatchItems.length === 0 ||
@@ -1546,11 +1547,11 @@ export function ContentAgentHome({
                       >
                         {isBatchComposerMode
                           ? batchGenerateState === "running"
-                            ? "批量生成中..."
+                            ? "批量仿写中..."
                             : "开始批量仿写"
                           : generateState === "generating"
-                          ? "生成中..."
-                          : "生成内容"}
+                          ? "仿写中..."
+                          : "开始仿写"}
                       </button>
                       <p
                         className={`text-sm ${
@@ -1564,17 +1565,23 @@ export function ContentAgentHome({
                             ? `正在顺序生成第 ${batchProgress.currentIndex ?? 1} 篇 / 共 ${batchProgress.total} 篇：${batchProgress.activeFileName ?? "当前素材"}。已成功 ${batchProgress.successCount} 篇，已失败 ${batchProgress.failedCount} 篇。`
                             : batchGenerateState === "completed"
                               ? `本批次执行完成。成功 ${batchProgress.successCount} 篇，失败 ${batchProgress.failedCount} 篇。成功结果已进入现有工作台历史记录。`
-                              : "当前阶段已接入顺序逐篇执行。开始后会锁定本批次素材、preset 和仿写要求，按公众号单篇链路逐篇生成。"
+                              : "当前阶段已接入顺序逐篇执行。开始后会锁定本批次素材和提示词预设，按公众号单篇链路逐篇仿写。"
                           : generateState === "error"
                           ? generateMessage
                           : generateState === "generating"
                             ? getGeneratePendingMessage(composerSelectedPlatforms)
-                          : userPrompt.trim() &&
+                          : hasRequiredRewriteSource &&
+                              hasRequiredPromptPresets &&
                               composerSelectedPlatforms.length > 0
                             ? getGeneratePendingMessage(composerSelectedPlatforms)
-                            : !userPrompt.trim()
-                              ? "先输入需求内容"
-                              : "再至少选择一个平台即可生成"}
+                            : !hasRequiredRewriteSource
+                              ? "先上传原文或素材"
+                              : !hasRequiredPromptPresets
+                                ? "再为已选平台选择提示词预设"
+                                : composerSelectedPlatforms.length === 0
+                                  ? "再至少选择一个平台"
+                                  : "准备开始仿写"
+                              }
                       </p>
                     </div>
                   </div>
@@ -1583,7 +1590,7 @@ export function ContentAgentHome({
 
               {!hasHistory ? (
                 <div className="mt-8 rounded-[28px] border border-dashed border-black/10 bg-stone-50/80 px-5 py-4 text-sm leading-7 text-slate-500">
-                  这里很快会出现你的第一条草稿。先写下一个主题，我们就从它开始。
+                  这里很快会出现你的第一条仿写草稿。先上传原文或素材，再选择提示词预设，我们就从第一篇开始。
                 </div>
               ) : null}
             </div>

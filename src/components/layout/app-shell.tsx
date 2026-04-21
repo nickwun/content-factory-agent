@@ -11,7 +11,13 @@ export const APP_SHELL_NAV_BUTTON_DISABLED_CLASS =
 
 type AppShellProps = {
   currentCenter: "creative" | "topics";
-  currentPath: "/" | "/settings" | "/topics" | "/topics/sources" | "/topics/articles";
+  currentPath:
+    | "/"
+    | "/settings"
+    | "/topics"
+    | "/topics/sources"
+    | "/topics/articles"
+    | "/topics/wechat-hot";
   secondaryNavItems?: Array<{
     id: string;
     label: string;

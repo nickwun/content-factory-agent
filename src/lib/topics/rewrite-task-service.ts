@@ -4,6 +4,7 @@ import {
   buildRewriteSource,
   MAX_REWRITE_SOURCE_CHARS,
 } from "../rewrite/rewrite-source.ts";
+import { buildPromptPresetPromptBlocks, type PromptPresetInput } from "../rewrite/prompt-preset-input.ts";
 import { buildWechatFinalizationOptions } from "../generation/wechat-finalization.ts";
 import type { CandidateArticle, RewriteTask, TopicCluster } from "./types.ts";
 
@@ -65,7 +66,10 @@ export function createRewriteTaskService(input: {
       return rewriteTaskRepository.list();
     },
 
-    startRewriteTaskFromCluster(clusterId: string) {
+    startRewriteTaskFromCluster(
+      clusterId: string,
+      promptPresetInput?: PromptPresetInput,
+    ) {
       const cluster = topicClusterRepository.getById(clusterId);
 
       if (!cluster) {
@@ -120,7 +124,7 @@ export function createRewriteTaskService(input: {
       return {
         rewriteTask: createdTask,
         generatePayload: {
-          userPrompt: buildRewriteUserPrompt(createdTask.brief),
+          userPrompt: buildRewriteUserPrompt(createdTask.brief, promptPresetInput),
           selectedPlatforms: ["wechat_article"] as const,
           rewriteSource: buildRewriteSource({
             kind: "pasted_text",
@@ -178,17 +182,26 @@ export function createRewriteTaskService(input: {
   };
 }
 
-function buildRewriteUserPrompt(brief: RewriteTask["brief"]) {
+function buildRewriteUserPrompt(
+  brief: RewriteTask["brief"],
+  promptPresetInput?: PromptPresetInput,
+) {
   const angles = brief.keyAngles.map((angle) => `- ${angle}`).join("\n");
-
-  return [
+  const lines = [
     `请围绕「${brief.topicTitle}」重构一篇公众号长文。`,
     brief.topicSummary,
     "建议优先吸收这些代表角度：",
     angles,
     `写作目标：${brief.rewriteGoal}`,
     `风格要求：${brief.styleProfile}`,
-  ].join("\n\n");
+  ];
+
+  const presetBlocks = buildPromptPresetPromptBlocks(promptPresetInput);
+  if (presetBlocks.length > 0) {
+    lines.push(...presetBlocks);
+  }
+
+  return lines.join("\n\n");
 }
 
 function buildRepresentativeSourceText(articles: CandidateArticle[]) {

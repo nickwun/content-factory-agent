@@ -17,8 +17,10 @@ import {
   parseWechatFinalizationPayload,
   type WechatFinalizationOptions,
 } from "./wechat-finalization.ts";
+import type { GenerateRequestSource } from "../rewrite/article-source-ui.ts";
 
 type GenerateRequestBody = {
+  requestSource?: unknown;
   userPrompt?: unknown;
   selectedPlatforms?: unknown;
   rewriteSource?: unknown;
@@ -27,6 +29,7 @@ type GenerateRequestBody = {
 };
 
 export type ParsedGenerateRequest = {
+  requestSource?: GenerateRequestSource;
   userPrompt: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;
@@ -64,6 +67,7 @@ export class GenerateRequestValidationError extends Error {
 export function parseGenerateRequestPayload(
   body: GenerateRequestBody,
 ): ParsedGenerateRequest {
+  const requestSource = parseRequestSource(body.requestSource);
   const userPrompt =
     typeof body.userPrompt === "string" ? body.userPrompt.trim() : "";
   const selectedPlatforms = Array.isArray(body.selectedPlatforms)
@@ -73,7 +77,7 @@ export function parseGenerateRequestPayload(
       )
     : [];
 
-  if (!userPrompt || selectedPlatforms.length === 0) {
+  if (requestSource !== "composer_rewrite" && (!userPrompt || selectedPlatforms.length === 0)) {
     throw new GenerateRequestValidationError(
       "userPrompt and selectedPlatforms are required",
     );
@@ -135,13 +139,66 @@ export function parseGenerateRequestPayload(
     }
   }
 
+  if (requestSource !== "composer_rewrite" && !rewriteSource) {
+    throw new GenerateRequestValidationError(
+      "当前已下线无素材直接生成，请先提供素材并选择提示词预设。",
+    );
+  }
+
+  if (requestSource === "composer_rewrite") {
+    if (selectedPlatforms.length === 0) {
+      throw new GenerateRequestValidationError(
+        "新建内容页仿写请求必须至少选择一个输出平台。",
+      );
+    }
+
+    if (userPrompt) {
+      throw new GenerateRequestValidationError(
+        "新建内容页不再支持前台手写仿写要求，请直接选择提示词预设后开始仿写。",
+      );
+    }
+
+    if (!rewriteSource) {
+      throw new GenerateRequestValidationError(
+        "新建内容页仿写请求必须先提供素材。",
+      );
+    }
+
+    if (!selectedPromptPresetByPlatform) {
+      throw new GenerateRequestValidationError(
+        "新建内容页仿写请求必须先选择提示词预设。",
+      );
+    }
+
+    for (const platform of selectedPlatforms) {
+      if (!selectedPromptPresetByPlatform[platform]) {
+        throw new GenerateRequestValidationError(
+          `新建内容页仿写请求缺少 ${platform} 的提示词预设。`,
+        );
+      }
+    }
+  }
+
   return {
+    requestSource,
     userPrompt,
     selectedPlatforms,
     rewriteSource,
     selectedPromptPresetByPlatform,
     wechatFinalization,
   };
+}
+
+function parseRequestSource(value: unknown): GenerateRequestSource | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === "composer_rewrite") {
+    return value;
+  }
+
+  throw new GenerateRequestValidationError("requestSource is invalid");
 }
 
 export async function prepareRewriteGeneration(

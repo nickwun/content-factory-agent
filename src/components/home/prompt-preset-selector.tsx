@@ -37,10 +37,10 @@ export function PromptPresetSelector({
       <div className="flex items-start justify-between gap-4">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
-            当前风格预设
+            提示词预设（必选）
           </p>
           <p className="mt-2 text-sm leading-7 text-slate-500">
-            只对当前已选平台显示。没手动选择时，会自动使用该平台默认预设。
+            只对当前已选平台显示。开始仿写前，请为每个已选平台明确指定一套提示词预设。
           </p>
         </div>
       </div>
@@ -48,8 +48,7 @@ export function PromptPresetSelector({
       <div className="mt-4 grid gap-3">
         {selectedPlatforms.map((platform) => {
           const group = presetGroups.find((item) => item.platform === platform);
-          const defaultPresetId = group?.presets.find((preset) => preset.isDefault)?.id ?? "";
-          const currentPresetId = selectedPresetIds[platform] ?? defaultPresetId;
+          const currentPresetId = selectedPresetIds[platform] ?? "";
 
           return (
             <label
@@ -69,6 +68,9 @@ export function PromptPresetSelector({
                     : "bg-stone-50 text-slate-700"
                 }`}
               >
+                <option value="">
+                  请选择 {PLATFORM_LABELS[platform]} 的提示词预设
+                </option>
                 {(group?.presets ?? []).map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}

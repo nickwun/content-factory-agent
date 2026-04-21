@@ -642,9 +642,9 @@ test("generateDraft passes rewriteSource through to all real platform generators
   ]);
 });
 
-test("generateDraft keeps rewriteSource undefined when not provided", async () => {
+test("generateDraft preserves rewriteSource absence for legacy direct contexts", async () => {
   const context = buildGenerationContext({
-    userPrompt: "写一个不带原文的普通生成请求",
+    userPrompt: "系统兼容输入",
     selectedPlatforms: ["wechat_article"],
     promptSettings: [],
     now: "2026-04-07T12:30:00.000Z",
@@ -658,8 +658,8 @@ test("generateDraft keeps rewriteSource undefined when not provided", async () =
       assert.equal(receivedContext.rewriteSource, undefined);
       return {
         platform: "wechat_article",
-        title: "普通生成标题",
-        blocks: [{ id: "block-1", type: "paragraph", text: "普通正文" }],
+        title: "兼容路径标题",
+        blocks: [{ id: "block-1", type: "paragraph", text: "兼容路径正文" }],
       };
     },
     generateTwitterDraft: async () => {
@@ -757,9 +757,9 @@ test("generateDraft includes longform rewrite tracking in generationInfo", async
   assert.equal(result.generationInfo.rewriteBriefVersion, "v1");
 });
 
-test("generateDraft keeps plain generation on rewriteMode none", async () => {
+test("generateDraft keeps rewriteMode none for legacy direct contexts", async () => {
   const context = buildGenerationContext({
-    userPrompt: "写一篇关于长期主义的公众号文章",
+    userPrompt: "系统兼容输入",
     selectedPlatforms: ["wechat_article"],
     promptSettings: [],
     now: "2026-04-07T13:00:00.000Z",
@@ -775,8 +775,8 @@ test("generateDraft keeps plain generation on rewriteMode none", async () => {
       assert.equal(receivedContext.rewriteBrief, undefined);
       return {
         platform: "wechat_article",
-        title: "普通生成标题",
-        blocks: [{ id: "block-1", type: "paragraph", text: "普通正文" }],
+        title: "兼容路径标题",
+        blocks: [{ id: "block-1", type: "paragraph", text: "兼容路径正文" }],
       };
     },
     generateTwitterDraft: async () => {

@@ -54,11 +54,11 @@ test("buildRewriteSourceErrorMessage maps unsupported file type and parse failur
 
 test("buildGenerateRequestPayload only includes rewriteSource when present", () => {
   const withoutRewrite = buildGenerateRequestPayload({
-    userPrompt: "写一篇内容",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article"],
   });
   const withRewrite = buildGenerateRequestPayload({
-    userPrompt: "请仿写",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article", "twitter"],
     selectedPromptPresetByPlatform: {
       wechat_article: "wechat-preset-1",
@@ -71,11 +71,11 @@ test("buildGenerateRequestPayload only includes rewriteSource when present", () 
   });
 
   assert.deepEqual(withoutRewrite, {
-    userPrompt: "写一篇内容",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article"],
   });
   assert.deepEqual(withRewrite, {
-    userPrompt: "请仿写",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article", "twitter"],
     selectedPromptPresetByPlatform: {
       wechat_article: "wechat-preset-1",
@@ -90,7 +90,7 @@ test("buildGenerateRequestPayload only includes rewriteSource when present", () 
 
 test("buildGenerateRequestPayload includes wechatFinalization when provided", () => {
   const payload = buildGenerateRequestPayload({
-    userPrompt: "请生成一篇公众号文章",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article"],
     wechatFinalization: {
       enabled: true,
@@ -102,7 +102,7 @@ test("buildGenerateRequestPayload includes wechatFinalization when provided", ()
   });
 
   assert.deepEqual(payload, {
-    userPrompt: "请生成一篇公众号文章",
+    requestSource: "composer_rewrite",
     selectedPlatforms: ["wechat_article"],
     wechatFinalization: {
       enabled: true,

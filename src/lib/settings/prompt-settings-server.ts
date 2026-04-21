@@ -6,6 +6,7 @@ import {
 } from "./prompt-settings-repository.ts";
 import {
   createPromptPresetRepository,
+  cleanupLegacyRewriteProfileTables,
   ensurePromptPresetsTable,
 } from "./prompt-preset-repository.ts";
 import {
@@ -14,16 +15,19 @@ import {
   getDefaultPromptTemplates,
 } from "./prompt-settings-service.ts";
 import type {
-  PlatformPromptPresetGroup,
+  PromptPresetCorpusFile,
   PlatformPromptSetting,
+  PlatformPromptPresetGroup,
   PromptPresetIdByPlatform,
 } from "./prompt-settings-types.ts";
+import type { PromptPresetInput } from "../rewrite/prompt-preset-input.ts";
 
 function getPromptSettingsService() {
   const db = getAppDatabase();
   ensurePromptSettingsTable(db, getDefaultPromptTemplates());
   const legacyRepository = createPromptSettingsRepository(db);
   ensurePromptPresetsTable(db, legacyRepository.list());
+  cleanupLegacyRewriteProfileTables(db);
   const repository = createPromptPresetRepository(db);
   return createPromptSettingsService(repository);
 }
@@ -80,6 +84,47 @@ export function updatePromptSetting(
 
 export function resetPromptSetting(platform: PlatformType) {
   return getPromptSettingsService().resetPromptSetting(platform);
+}
+
+export function attachPromptPresetCorpusFile(
+  presetId: string,
+  input: {
+    fileName: string;
+    mimeType: PromptPresetCorpusFile["mimeType"];
+    extractedText: string;
+    summary?: PromptPresetCorpusFile["summary"];
+  },
+) {
+  return getPromptSettingsService().attachPromptPresetCorpusFile(presetId, input);
+}
+
+export function listPromptPresetCorpusFiles(presetId: string) {
+  return getPromptSettingsService().listPromptPresetCorpusFiles(presetId);
+}
+
+export function replacePromptPresetCorpusFile(
+  presetId: string,
+  replaceFileId: string,
+  input: {
+    fileName: string;
+    mimeType: PromptPresetCorpusFile["mimeType"];
+    extractedText: string;
+    summary?: PromptPresetCorpusFile["summary"];
+  },
+) {
+  return getPromptSettingsService().replacePromptPresetCorpusFile(
+    presetId,
+    replaceFileId,
+    input,
+  );
+}
+
+export function deletePromptPresetCorpusFile(presetId: string, fileId: string) {
+  return getPromptSettingsService().deletePromptPresetCorpusFile(presetId, fileId);
+}
+
+export function buildPromptPresetInput(presetId: string): PromptPresetInput {
+  return getPromptSettingsService().buildPromptPresetInput(presetId);
 }
 
 export { PromptPresetError };

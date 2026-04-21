@@ -7,8 +7,11 @@ import {
   type RewriteSource,
 } from "./rewrite-source.ts";
 
+export type GenerateRequestSource = "composer_rewrite";
+
 type BuildGenerateRequestPayloadInput = {
-  userPrompt: string;
+  requestSource?: GenerateRequestSource;
+  userPrompt?: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;
   selectedPromptPresetByPlatform?: PromptPresetIdByPlatform;
@@ -19,7 +22,10 @@ export function buildGenerateRequestPayload(
   input: BuildGenerateRequestPayloadInput,
 ) {
   return {
-    userPrompt: input.userPrompt,
+    ...(input.requestSource ? { requestSource: input.requestSource } : {}),
+    ...(typeof input.userPrompt === "string" && input.userPrompt.trim()
+      ? { userPrompt: input.userPrompt.trim() }
+      : {}),
     selectedPlatforms: input.selectedPlatforms,
     ...(input.rewriteSource ? { rewriteSource: input.rewriteSource } : {}),
     ...(input.selectedPromptPresetByPlatform

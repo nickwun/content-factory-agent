@@ -236,6 +236,28 @@ test("wechat prompt keeps original branch when rewriteSource is absent", () => {
   assert.doesNotMatch(prompt, /不要直接复制原文句子/);
 });
 
+test("standard fallback prompts use rewrite-input wording instead of creation-demand wording", () => {
+  const prompts = [
+    buildWechatUserPrompt({
+      userPrompt: "系统自动组织的公众号仿写输入",
+    }),
+    buildTwitterUserPrompt({
+      userPrompt: "系统自动组织的 Twitter 仿写输入",
+    }),
+    buildXiaohongshuUserPrompt({
+      userPrompt: "系统自动组织的小红书仿写输入",
+    }),
+    buildVideoScriptUserPrompt({
+      userPrompt: "系统自动组织的视频脚本仿写输入",
+    }),
+  ];
+
+  for (const prompt of prompts) {
+    assert.doesNotMatch(prompt, /创作需求/);
+    assert.match(prompt, /仿写输入/);
+  }
+});
+
 test("wechat prompt adds section budget guidance to keep the draft tighter", () => {
   const prompt = buildWechatUserPrompt({
     userPrompt: "仿写一篇关于写作延缓衰老的公众号文章",

@@ -138,6 +138,70 @@ test("resolvePromptSettings uses explicit preset ids, defaults otherwise, and re
   );
 });
 
+test("prompt preset service can attach, replace, and remove corpus for wechat presets", () => {
+  const service = createService();
+  const wechatPreset = service
+    .listPromptPresetGroups(["wechat_article"])[0]
+    ?.presets[0];
+
+  assert.ok(wechatPreset?.id);
+
+  const attached = service.attachPromptPresetCorpusFile(wechatPreset.id, {
+    fileName: "runner-tone.txt",
+    mimeType: "text/plain",
+    extractedText: "这是主语料正文",
+    summary: {
+      tone: ["克制"],
+      structure: ["结论前置"],
+      lengthHint: "整体篇幅偏中等，适合完整展开一个问题。",
+      reusablePhrases: ["先说结论"],
+    },
+  });
+
+  assert.equal(attached.fileName, "runner-tone.txt");
+
+  const replaced = service.replacePromptPresetCorpusFile(wechatPreset.id, attached.id, {
+    fileName: "runner-tone-v2.txt",
+    mimeType: "text/plain",
+    extractedText: "新版主语料正文",
+    summary: {
+      tone: ["具体"],
+      structure: ["问题起手"],
+      lengthHint: "整体篇幅偏中等，适合完整展开一个问题。",
+      reusablePhrases: ["先把问题说透"],
+    },
+  });
+
+  assert.notEqual(replaced.id, attached.id);
+
+  const listed = service.listPromptPresetCorpusFiles(wechatPreset.id);
+  assert.deepEqual(listed.map((item) => item.id), [replaced.id]);
+
+  service.deletePromptPresetCorpusFile(wechatPreset.id, replaced.id);
+  assert.deepEqual(service.listPromptPresetCorpusFiles(wechatPreset.id), []);
+});
+
+test("prompt preset service rejects attaching corpus to unsupported platforms", () => {
+  const service = createService();
+  const xhsPreset = service.createPromptPreset({
+    platform: "xiaohongshu",
+    name: "小红书测试",
+    promptTemplate: "小红书提示词",
+  });
+
+  assert.throws(
+    () =>
+      service.attachPromptPresetCorpusFile(xhsPreset.id, {
+        fileName: "runner-tone.txt",
+        mimeType: "text/plain",
+        extractedText: "语料正文",
+      }),
+    (error: unknown) =>
+      error instanceof PromptPresetError &&
+      error.code === "unsupported_corpus_platform",
+  );
+});
+
 function createService() {
   const db = createTempDb();
   ensurePromptSettingsTable(db, getDefaultPromptTemplates());

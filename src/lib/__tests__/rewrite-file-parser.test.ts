@@ -111,6 +111,19 @@ test("buildMammothDocxInput uses Buffer for the node mammoth runtime", () => {
   assert.equal(input.buffer.toString("utf8"), "docx-binary");
 });
 
+test("buildMammothDocxInput uses arrayBuffer for the browser mammoth runtime", () => {
+  const bytes = new TextEncoder().encode("docx-binary");
+  const arrayBuffer = bytes.buffer.slice(
+    bytes.byteOffset,
+    bytes.byteOffset + bytes.byteLength,
+  );
+
+  const input = buildMammothDocxInput(arrayBuffer, "browser");
+
+  assert.ok("arrayBuffer" in input);
+  assert.equal(input.arrayBuffer, arrayBuffer);
+});
+
 test("parseRewriteFile rejects unsupported file types", async () => {
   await assert.rejects(
     async () => {

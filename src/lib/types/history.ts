@@ -137,11 +137,14 @@ export type GenerationMetadata = {
 };
 
 export type HistoryRecordTraceContext = {
-  sourceKind: "direct_create" | "rewrite_task";
+  sourceKind: "direct_create" | "rewrite_task" | "external_rewrite_task";
   topicClusterId?: string;
   topicClusterTitle?: string;
   rewriteTaskId?: string;
+  externalRewriteTaskId?: string;
+  externalKeyword?: string;
   representativeArticleIds?: string[];
+  externalArticleCount?: number;
   createdFromPlatform?: "wechat_article";
 };
 

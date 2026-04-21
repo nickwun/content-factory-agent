@@ -219,3 +219,23 @@ test("buildContentTraceSummary falls back safely for old records without trace c
   assert.equal(summary.latestPublish, undefined);
   assert.equal(summary.latestIssue, undefined);
 });
+
+test("buildContentTraceSummary supports external rewrite task source", () => {
+  const summary = buildContentTraceSummary({
+    record: createRecord({
+      sourceKind: "external_rewrite_task",
+      externalRewriteTaskId: "external-task-1",
+      externalKeyword: "马拉松",
+      representativeArticleIds: ["article-1", "article-2", "article-3"],
+      externalArticleCount: 3,
+      createdFromPlatform: "wechat_article",
+    }),
+    publishResults: [],
+    executionEvents: [],
+  });
+
+  assert.equal(summary.source.sourceKind, "external_rewrite_task");
+  assert.equal(summary.source.externalKeyword, "马拉松");
+  assert.equal(summary.source.externalRewriteTaskId, "external-task-1");
+  assert.equal(summary.source.representativeArticleCount, 3);
+});

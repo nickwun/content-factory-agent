@@ -137,12 +137,27 @@ async function extractDocxText(
   }
 
   const result = await mammothModule.extractRawText(
-    buildMammothDocxInput(arrayBuffer),
+    buildMammothDocxInput(arrayBuffer, getMammothRuntime()),
   );
   return result.value;
 }
 
-export function buildMammothDocxInput(arrayBuffer: ArrayBuffer) {
+type MammothRuntime = "node" | "browser";
+
+function getMammothRuntime(): MammothRuntime {
+  return typeof window === "undefined" ? "node" : "browser";
+}
+
+export function buildMammothDocxInput(
+  arrayBuffer: ArrayBuffer,
+  runtime: MammothRuntime = "node",
+) {
+  if (runtime === "browser") {
+    return {
+      arrayBuffer,
+    };
+  }
+
   return {
     buffer: Buffer.from(arrayBuffer),
   };

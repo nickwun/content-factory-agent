@@ -48,7 +48,9 @@ export function ContentTracePanel({ summary }: ContentTracePanelProps) {
               <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
                 {summary.source.sourceKind === "rewrite_task"
                   ? "来自选题中心"
-                  : "直接创作"}
+                  : summary.source.sourceKind === "external_rewrite_task"
+                    ? "来自外部爆款素材"
+                    : "直接创作"}
               </span>
             </div>
             {summary.source.topicClusterTitle ? (
@@ -59,11 +61,27 @@ export function ContentTracePanel({ summary }: ContentTracePanelProps) {
                 </p>
               </div>
             ) : null}
+            {summary.source.externalKeyword ? (
+              <div className="space-y-1">
+                <p className="text-xs text-slate-400">外部关键词</p>
+                <p className="font-medium text-slate-900">
+                  {summary.source.externalKeyword}
+                </p>
+              </div>
+            ) : null}
             {summary.source.rewriteTaskId ? (
               <div className="flex items-center justify-between gap-3">
                 <span>仿写任务</span>
                 <span className="font-mono text-[11px] text-slate-500">
                   {summary.source.rewriteTaskId}
+                </span>
+              </div>
+            ) : null}
+            {summary.source.externalRewriteTaskId ? (
+              <div className="flex items-center justify-between gap-3">
+                <span>外部任务</span>
+                <span className="font-mono text-[11px] text-slate-500">
+                  {summary.source.externalRewriteTaskId}
                 </span>
               </div>
             ) : null}

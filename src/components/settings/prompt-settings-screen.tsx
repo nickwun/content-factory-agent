@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  PromptPresetCorpusFile,
   PlatformPromptPresetGroup,
   PlatformPromptSetting,
 } from "@/lib/settings/prompt-settings-types";
@@ -20,6 +21,7 @@ type PromptSettingsScreenProps = {
 };
 
 type StatusState = "idle" | "saving" | "saved" | "error";
+type CorpusStatusState = "idle" | "uploading" | "saved" | "error";
 
 export function PromptSettingsScreen({
   initialPresetGroups,
@@ -35,12 +37,17 @@ export function PromptSettingsScreen({
     ),
   );
   const [status, setStatus] = useState<StatusState>("idle");
+  const [corpusStatus, setCorpusStatus] = useState<CorpusStatusState>("idle");
+  const [corpusError, setCorpusError] = useState<string | null>(null);
+  const [replaceFileId, setReplaceFileId] = useState<string | null>(null);
+  const uploadInputRef = useRef<HTMLInputElement | null>(null);
 
   const activeGroup = useMemo(
     () => presetGroups.find((group) => group.platform === activePlatform),
     [activePlatform, presetGroups],
   );
   const activePreset = activeGroup?.presets.find((preset) => preset.id === activePresetId);
+  const activeCorpusFiles = activePreset?.corpusFiles ?? [];
 
   useEffect(() => {
     if (activePreset) {
@@ -74,6 +81,77 @@ export function PromptSettingsScreen({
       nextActivePresetId ??
         resolveInitialActivePresetId(data.presetGroups, activePlatform),
     );
+  }
+
+  async function handleUploadCorpus(file: File, replacingFileId?: string) {
+    if (!activePreset?.id) {
+      return;
+    }
+
+    setCorpusStatus("uploading");
+    setCorpusError(null);
+
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      if (replacingFileId) {
+        formData.set("replaceFileId", replacingFileId);
+      }
+
+      const response = await fetch(`/api/prompt-presets/${activePreset.id}/corpus`, {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        throw new Error(payload?.error?.message ?? "语料上传失败");
+      }
+
+      await reloadPresetGroups(activePreset.id);
+      setCorpusStatus("saved");
+      setReplaceFileId(null);
+    } catch (error) {
+      setCorpusStatus("error");
+      setCorpusError(error instanceof Error ? error.message : "语料上传失败");
+    } finally {
+      if (uploadInputRef.current) {
+        uploadInputRef.current.value = "";
+      }
+    }
+  }
+
+  async function handleDeleteCorpus(file: PromptPresetCorpusFile) {
+    if (!activePreset?.id) {
+      return;
+    }
+
+    setCorpusStatus("uploading");
+    setCorpusError(null);
+
+    try {
+      const response = await fetch(
+        `/api/prompt-presets/${activePreset.id}/corpus/${file.id}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: { message?: string } }
+          | null;
+        throw new Error(payload?.error?.message ?? "语料删除失败");
+      }
+
+      await reloadPresetGroups(activePreset.id);
+      setCorpusStatus("saved");
+    } catch (error) {
+      setCorpusStatus("error");
+      setCorpusError(error instanceof Error ? error.message : "语料删除失败");
+    }
   }
 
   async function handleCreatePreset() {
@@ -404,7 +482,7 @@ export function PromptSettingsScreen({
                 提示词模板
               </p>
               <p className="mt-2 text-sm leading-7 text-slate-500">
-                修改这里会影响该预设下后续的普通生成与仿写生成。
+                修改这里会影响该预设下后续的仿写生成。
               </p>
             </div>
 
@@ -431,6 +509,115 @@ export function PromptSettingsScreen({
               }
               className="min-h-[480px] w-full resize-y rounded-[28px] border border-slate-200 bg-[linear-gradient(180deg,_rgba(255,255,255,1),_rgba(247,242,234,0.86))] px-5 py-4 text-base leading-8 outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
             />
+
+            {activePreset.platform === "wechat_article" ? (
+              <div className="rounded-[24px] border border-black/8 bg-stone-50/90 px-4 py-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                      语料库
+                    </p>
+                    <p className="mt-2 text-sm leading-7 text-slate-500">
+                      当前 preset 级别绑定少量 txt / docx 语料，生成时只带摘要，不带全文。
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`rounded-full px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] ${
+                        corpusStatus === "uploading"
+                          ? "bg-amber-100 text-amber-700"
+                          : corpusStatus === "saved"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : corpusStatus === "error"
+                              ? "bg-rose-100 text-rose-600"
+                              : "bg-stone-100 text-slate-500"
+                      }`}
+                    >
+                      {corpusStatus === "uploading"
+                        ? "上传中"
+                        : corpusStatus === "saved"
+                          ? "解析成功"
+                          : corpusStatus === "error"
+                            ? "解析失败"
+                            : "待上传"}
+                    </span>
+                    <input
+                      ref={uploadInputRef}
+                      type="file"
+                      accept=".txt,.docx,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0];
+                        if (!file) {
+                          return;
+                        }
+
+                        void handleUploadCorpus(file, replaceFileId ?? undefined);
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setReplaceFileId(null);
+                        uploadInputRef.current?.click();
+                      }}
+                      className="rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+                    >
+                      上传语料
+                    </button>
+                  </div>
+                </div>
+
+                {corpusError ? (
+                  <p className="mt-3 text-sm leading-7 text-rose-600">{corpusError}</p>
+                ) : null}
+
+                <div className="mt-4 space-y-3">
+                  {activeCorpusFiles.length > 0 ? (
+                    activeCorpusFiles.map((file) => (
+                      <div
+                        key={file.id}
+                        className="rounded-[20px] border border-black/8 bg-white px-4 py-4"
+                      >
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-slate-900">
+                              {file.fileName}
+                            </p>
+                            <p className="mt-1 text-xs leading-6 text-slate-500">
+                              {file.summary?.lengthHint ?? "已绑定语料摘要"}
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setReplaceFileId(file.id);
+                                uploadInputRef.current?.click();
+                              }}
+                              className="rounded-full border border-black/8 bg-stone-100 px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:bg-white"
+                            >
+                              替换
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleDeleteCorpus(file)}
+                              className="rounded-full border border-rose-100 bg-rose-50 px-3 py-1.5 text-xs font-medium text-rose-600 transition hover:bg-white"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="rounded-[20px] border border-dashed border-black/10 bg-white px-4 py-4 text-sm leading-7 text-slate-500">
+                      当前 preset 还没有绑定语料。先上传一份主语料，后面再按需要补少量文件。
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="rounded-[28px] border border-dashed border-black/10 bg-stone-50/90 px-5 py-6 text-sm leading-7 text-slate-500">

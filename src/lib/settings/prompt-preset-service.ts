@@ -1,5 +1,6 @@
 import type { PlatformType } from "../types/platform.ts";
 import type {
+  PromptPresetCorpusFile,
   PlatformPromptPresetGroup,
   PlatformPromptSetting,
   PromptPresetIdByPlatform,
@@ -9,6 +10,10 @@ type PromptPresetRepository = {
   list(platforms?: PlatformType[]): PlatformPromptSetting[];
   getById(id: string): PlatformPromptSetting | null;
   getDefaultByPlatform(platform: PlatformType): PlatformPromptSetting | null;
+  findByPlatformAndName(
+    platform: PlatformType,
+    name: string,
+  ): PlatformPromptSetting | null;
   create(input: {
     id: string;
     platform: PlatformType;
@@ -35,6 +40,21 @@ type PromptPresetRepository = {
     platforms: PlatformType[],
     selectedPresetIds?: PromptPresetIdByPlatform,
   ): Array<PlatformPromptSetting | null>;
+  createCorpusFile(input: {
+    id: string;
+    fileName: string;
+    mimeType: PromptPresetCorpusFile["mimeType"];
+    extractedText: string;
+    summary?: PromptPresetCorpusFile["summary"];
+    createdAt: string;
+    updatedAt: string;
+  }): PromptPresetCorpusFile | null;
+  getCorpusFileById(id: string): PromptPresetCorpusFile | null;
+  bindCorpusFile(presetId: string, fileId: string, createdAt: string): void;
+  listCorpusFilesByPreset(presetId: string): PromptPresetCorpusFile[];
+  unbindCorpusFile(presetId: string, fileId: string): number;
+  countPresetsByCorpusFile(fileId: string): number;
+  deleteCorpusFile(fileId: string): number;
 };
 
 type CreatePromptPresetInput = {
@@ -51,16 +71,20 @@ type UpdatePromptPresetInput = {
 export class PromptPresetError extends Error {
   readonly code:
     | "preset_not_found"
+    | "corpus_file_not_found"
     | "duplicate_preset_name"
     | "last_preset_for_platform"
-    | "invalid_preset_id";
+    | "invalid_preset_id"
+    | "unsupported_corpus_platform";
 
   constructor(
     code:
       | "preset_not_found"
+      | "corpus_file_not_found"
       | "duplicate_preset_name"
       | "last_preset_for_platform"
-      | "invalid_preset_id",
+      | "invalid_preset_id"
+      | "unsupported_corpus_platform",
     message: string,
   ) {
     super(message);
@@ -248,6 +272,78 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
         promptTemplate: defaultPreset.defaultTemplate,
       });
     },
+
+    attachPromptPresetCorpusFile(
+      presetId: string,
+      input: {
+        fileName: string;
+        mimeType: PromptPresetCorpusFile["mimeType"];
+        extractedText: string;
+        summary?: PromptPresetCorpusFile["summary"];
+      },
+    ) {
+      const preset = assertCorpusSupportedPreset(repository, presetId);
+      const now = new Date().toISOString();
+
+      const created = repository.createCorpusFile({
+        id: crypto.randomUUID(),
+        fileName: input.fileName.trim(),
+        mimeType: input.mimeType,
+        extractedText: input.extractedText.trim(),
+        summary: normalizeCorpusSummary(input.summary),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      if (!created) {
+        throw new Error("Failed to create prompt preset corpus file");
+      }
+
+      repository.bindCorpusFile(preset.id ?? presetId, created.id, now);
+      return repository.getCorpusFileById(created.id) ?? created;
+    },
+
+    listPromptPresetCorpusFiles(presetId: string) {
+      assertCorpusSupportedPreset(repository, presetId);
+      return repository.listCorpusFilesByPreset(presetId);
+    },
+
+    replacePromptPresetCorpusFile(
+      presetId: string,
+      replaceFileId: string,
+      input: {
+        fileName: string;
+        mimeType: PromptPresetCorpusFile["mimeType"];
+        extractedText: string;
+        summary?: PromptPresetCorpusFile["summary"];
+      },
+    ) {
+      assertCorpusSupportedPreset(repository, presetId);
+      const now = new Date().toISOString();
+
+      const created = repository.createCorpusFile({
+        id: crypto.randomUUID(),
+        fileName: input.fileName.trim(),
+        mimeType: input.mimeType,
+        extractedText: input.extractedText.trim(),
+        summary: normalizeCorpusSummary(input.summary),
+        createdAt: now,
+        updatedAt: now,
+      });
+
+      if (!created) {
+        throw new Error("Failed to replace prompt preset corpus file");
+      }
+
+      repository.bindCorpusFile(presetId, created.id, now);
+      deleteBoundCorpusFile(repository, presetId, replaceFileId);
+      return repository.getCorpusFileById(created.id) ?? created;
+    },
+
+    deletePromptPresetCorpusFile(presetId: string, fileId: string) {
+      assertCorpusSupportedPreset(repository, presetId);
+      deleteBoundCorpusFile(repository, presetId, fileId);
+    },
   };
 }
 
@@ -305,4 +401,68 @@ function generateCopyName(
   }
 
   return `${baseName} 副本 ${index}`;
+}
+
+function normalizeStringList(values?: string[]) {
+  if (!values) {
+    return undefined;
+  }
+
+  const normalized = values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .filter((value, index, array) => array.indexOf(value) === index);
+
+  return normalized.length > 0 ? normalized : undefined;
+}
+
+function assertCorpusSupportedPreset(
+  repository: Pick<PromptPresetRepository, "getById">,
+  presetId: string,
+) {
+  const preset = repository.getById(presetId);
+  if (!preset) {
+    throw new PromptPresetError("preset_not_found", "提示词预设不存在。");
+  }
+
+  if (preset.platform !== "wechat_article") {
+    throw new PromptPresetError(
+      "unsupported_corpus_platform",
+      "当前只有公众号提示词预设支持绑定语料库。",
+    );
+  }
+
+  return preset;
+}
+
+function deleteBoundCorpusFile(
+  repository: Pick<
+    PromptPresetRepository,
+    "unbindCorpusFile" | "countPresetsByCorpusFile" | "deleteCorpusFile"
+  >,
+  presetId: string,
+  fileId: string,
+) {
+  const changes = repository.unbindCorpusFile(presetId, fileId);
+
+  if (changes === 0) {
+    throw new PromptPresetError("corpus_file_not_found", "语料文件不存在。");
+  }
+
+  if (repository.countPresetsByCorpusFile(fileId) === 0) {
+    repository.deleteCorpusFile(fileId);
+  }
+}
+
+function normalizeCorpusSummary(summary?: PromptPresetCorpusFile["summary"]) {
+  if (!summary) {
+    return undefined;
+  }
+
+  return {
+    tone: normalizeStringList(summary.tone)?.slice(0, 3),
+    structure: normalizeStringList(summary.structure)?.slice(0, 3),
+    lengthHint: summary.lengthHint?.trim() || undefined,
+    reusablePhrases: normalizeStringList(summary.reusablePhrases)?.slice(0, 3),
+  } satisfies PromptPresetCorpusFile["summary"];
 }

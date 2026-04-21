@@ -30,10 +30,19 @@ export function buildContentTraceSummary(
       ...(input.record?.traceContext?.rewriteTaskId
         ? { rewriteTaskId: input.record.traceContext.rewriteTaskId }
         : {}),
-      ...(input.record?.traceContext?.representativeArticleIds
+      ...(input.record?.traceContext?.externalKeyword
+        ? { externalKeyword: input.record.traceContext.externalKeyword }
+        : {}),
+      ...(input.record?.traceContext?.externalRewriteTaskId
+        ? { externalRewriteTaskId: input.record.traceContext.externalRewriteTaskId }
+        : {}),
+      ...(input.record?.traceContext?.representativeArticleIds ||
+      typeof input.record?.traceContext?.externalArticleCount === "number"
         ? {
             representativeArticleCount:
-              input.record.traceContext.representativeArticleIds.length,
+              typeof input.record.traceContext.externalArticleCount === "number"
+                ? input.record.traceContext.externalArticleCount
+                : (input.record.traceContext.representativeArticleIds?.length ?? 0),
           }
         : {}),
     },

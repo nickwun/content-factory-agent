@@ -20,8 +20,10 @@ import {
   listPromptSettings,
   PromptPresetError,
 } from "@/lib/settings/prompt-settings-server";
+import { buildComposerRewriteUserPrompt } from "@/lib/rewrite/prompt-preset-input";
 
 type GenerateRequestBody = {
+  requestSource?: unknown;
   userPrompt?: unknown;
   selectedPlatforms?: unknown;
   rewriteSource?: unknown;
@@ -34,6 +36,7 @@ export async function POST(request: NextRequest) {
     const body = (await request.json()) as GenerateRequestBody;
     const {
       userPrompt,
+      requestSource,
       selectedPlatforms,
       rewriteSource,
       selectedPromptPresetByPlatform,
@@ -48,8 +51,15 @@ export async function POST(request: NextRequest) {
       selectedPlatforms,
       selectedPromptPresetByPlatform,
     );
+    const resolvedUserPrompt =
+      requestSource === "composer_rewrite" && preparedRewrite.rewriteSource
+        ? buildComposerRewriteUserPrompt({
+            selectedPromptSettings: promptSettings,
+            rewriteSource: preparedRewrite.rewriteSource,
+          })
+        : userPrompt;
     const context = buildGenerationContext({
-      userPrompt,
+      userPrompt: resolvedUserPrompt,
       selectedPlatforms,
       promptSettings,
       rewriteSource: preparedRewrite.rewriteSource,

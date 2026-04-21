@@ -8,6 +8,16 @@ import { openSqliteDatabase, setAppDatabaseForTesting } from "../db/sqlite.ts";
 import { POST as POST_CANDIDATE_ARTICLE } from "../../app/api/topics/candidate-articles/route.ts";
 import { POST as POST_CLUSTERS } from "../../app/api/topics/clusters/route.ts";
 import {
+  createPromptSettingsRepository as createLegacyPromptSettingsRepository,
+  ensurePromptSettingsTable,
+} from "../settings/prompt-settings-repository.ts";
+import {
+  createPromptPresetRepository,
+  ensurePromptPresetsTable,
+} from "../settings/prompt-preset-repository.ts";
+import { createPromptPresetService } from "../settings/prompt-preset-service.ts";
+import { getDefaultPromptTemplates } from "../settings/prompt-settings-service.ts";
+import {
   GET as GET_REWRITE_TASKS,
   POST as POST_REWRITE_TASKS,
 } from "../../app/api/topics/rewrite-tasks/route.ts";
@@ -25,13 +35,19 @@ afterEach(() => {
 });
 
 test("rewrite task routes create, list, and update rewrite tasks", async () => {
-  setAppDatabaseForTesting(createTempDb());
+  const db = createTempDb();
+  setAppDatabaseForTesting(db);
   const sourceAccountId = await createSourceAccount();
 
   await createCandidateArticle({
     sourceAccountId,
     title: "跑步不是为了赢别人",
     contentMarkdown: "跑步是为了慢慢稳住自己的节奏。",
+  });
+  const promptPreset = createPromptPreset(db, {
+    name: "跑步长文提示词",
+    platform: "wechat_article",
+    promptTemplate: "写得更像长期主义跑者的公众号复盘。",
   });
   await POST_CLUSTERS(
     new Request("http://localhost/api/topics/clusters", {
@@ -53,7 +69,7 @@ test("rewrite task routes create, list, and update rewrite tasks", async () => {
     new Request("http://localhost/api/topics/rewrite-tasks", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ clusterId }),
+      body: JSON.stringify({ clusterId, promptPresetId: promptPreset.id }),
     }) as never,
   );
   const createPayload = (await createResponse.json()) as {
@@ -64,6 +80,10 @@ test("rewrite task routes create, list, and update rewrite tasks", async () => {
   assert.equal(createResponse.status, 201);
   assert.equal(createPayload.rewriteTask.status, "running");
   assert.ok(createPayload.generatePayload.userPrompt.length > 0);
+  assert.equal(
+    createPayload.generatePayload.userPrompt.includes("当前使用提示词预设「跑步长文提示词」。"),
+    true,
+  );
 
   const listResponse = await GET_REWRITE_TASKS(
     new Request("http://localhost/api/topics/rewrite-tasks") as never,
@@ -135,4 +155,19 @@ function createTempDb() {
 
   tempPaths.push(filename);
   return openSqliteDatabase(filename);
+}
+
+function createPromptPreset(
+  db: ReturnType<typeof openSqliteDatabase>,
+  input: {
+  name: string;
+  platform: "wechat_article";
+  promptTemplate: string;
+}) {
+  ensurePromptSettingsTable(db, getDefaultPromptTemplates());
+  const legacyRepository = createLegacyPromptSettingsRepository(db);
+  ensurePromptPresetsTable(db, legacyRepository.list());
+  const repository = createPromptPresetRepository(db);
+  const service = createPromptPresetService(repository);
+  return service.createPromptPreset(input);
 }

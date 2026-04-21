@@ -8,7 +8,8 @@ import type {
 import type { PlatformType } from "../types/platform.ts";
 
 type GenerateRequestPayload = {
-  userPrompt: string;
+  requestSource?: "composer_rewrite";
+  userPrompt?: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;
   selectedPromptPresetByPlatform?: PromptPresetIdByPlatform;
@@ -138,7 +139,7 @@ export function buildGenerateErrorMessage(
   }
 
   if (error.code === "invalid_generate_request") {
-    return error.message || "本次生成请求无效，请检查原文和创作需求后重试。";
+    return error.message || "本次仿写请求无效，请检查素材和提示词预设后重试。";
   }
 
   if (error.code === "generation_timeout") {

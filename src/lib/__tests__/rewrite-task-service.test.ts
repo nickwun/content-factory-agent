@@ -181,6 +181,75 @@ test("rewrite task service de-duplicates repeated key angle titles", () => {
   );
 });
 
+test("rewrite task service can include selected prompt preset input in generation prompt", () => {
+  const {
+    candidateArticleService,
+    rewriteTaskService,
+    sourceAccountService,
+    topicClusterService,
+  } = createServices();
+  const sourceAccountId = sourceAccountService.createSourceAccount({
+    name: "跑步写法样本",
+    priority: 88,
+  }).id;
+
+  candidateArticleService.createManualCandidateArticle({
+    sourceAccountId,
+    title: "第一次全马前一周，最重要的不是猛练",
+    contentMarkdown: "赛前一周更要稳节奏，而不是临时加量。",
+  });
+
+  const [cluster] = topicClusterService.rebuildTopicClusters();
+  const started = rewriteTaskService.startRewriteTaskFromCluster(cluster!.id, {
+    presetId: "preset-1",
+    name: "跑步长期主义提示词",
+    platform: "wechat_article",
+    promptTemplate: "写成一篇像长期跑者复盘的公众号文章，少讲大道理。",
+    corpusCount: 2,
+    hasCorpus: true,
+    corpusSummary: {
+      tone: ["口语、克制、像过来人提醒"],
+      structure: ["结论前置，再按阶段拆准备动作"],
+      lengthHint: "整体篇幅偏中等，段落不拖沓。",
+      reusablePhrases: ["先稳住节奏", "别急着证明自己"],
+    },
+  });
+
+  assert.equal(started.generatePayload.userPrompt.includes("提示词预设："), true);
+  assert.equal(
+    started.generatePayload.userPrompt.includes("当前使用提示词预设「跑步长期主义提示词」。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("当前预设已绑定 2 份参考语料摘要。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("预设提示词：\n写成一篇像长期跑者复盘的公众号文章，少讲大道理。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("语料参考："),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("参考 2 份绑定语料的整体语气：口语、克制、像过来人提醒。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("结构上优先贴近：结论前置，再按阶段拆准备动作。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("篇幅感参考：整体篇幅偏中等，段落不拖沓。"),
+    true,
+  );
+  assert.equal(
+    started.generatePayload.userPrompt.includes("可以少量借这些表达偏好：先稳住节奏；别急着证明自己。"),
+    true,
+  );
+});
+
 function createServices() {
   const db = createTempDb();
   ensureSourceAccountsTable(db);

@@ -2,6 +2,29 @@ import { AppShell } from "@/components/layout/app-shell";
 import { TopicOverviewScreen } from "@/components/topics/topic-overview-screen";
 import { getTopicCenterPageData } from "@/lib/topics/topic-center-page-data";
 
+const TOPIC_SECONDARY_NAV_ITEMS = [
+  {
+    id: "overview",
+    label: "首页总览",
+    href: "/topics",
+  },
+  {
+    id: "sources",
+    label: "样本池",
+    href: "/topics/sources",
+  },
+  {
+    id: "articles",
+    label: "候选文章",
+    href: "/topics/articles",
+  },
+  {
+    id: "wechat-hot",
+    label: "公众号爆款抓取",
+    href: "/topics/wechat-hot",
+  },
+] as const;
+
 export default async function TopicsPage() {
   const pageData = await getTopicCenterPageData();
 
@@ -10,23 +33,7 @@ export default async function TopicsPage() {
       currentCenter="topics"
       currentPath="/topics"
       showUtilityNav={false}
-      secondaryNavItems={[
-        {
-          id: "overview",
-          label: "首页总览",
-          href: "/topics",
-        },
-        {
-          id: "sources",
-          label: "样本池",
-          href: "/topics/sources",
-        },
-        {
-          id: "articles",
-          label: "候选文章",
-          href: "/topics/articles",
-        },
-      ]}
+      secondaryNavItems={[...TOPIC_SECONDARY_NAV_ITEMS]}
       currentSecondaryId="overview"
     >
       <div id="overview" className="mb-6">

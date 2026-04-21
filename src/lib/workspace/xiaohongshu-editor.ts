@@ -8,7 +8,7 @@ export function getXiaohongshuImageStatusLabel(
   status: XiaohongshuImageSuggestion["status"],
 ) {
   if (status === "generated") {
-    return "已完成";
+    return "已生成";
   }
 
   if (status === "generating") {
@@ -16,10 +16,10 @@ export function getXiaohongshuImageStatusLabel(
   }
 
   if (status === "failed") {
-    return "失败";
+    return "生成失败";
   }
 
-  return "待生成";
+  return "建议中";
 }
 
 export function getXiaohongshuImageSummary(count: number) {
