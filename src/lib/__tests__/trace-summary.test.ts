@@ -8,9 +8,13 @@ import type { HistoryRecord } from "../types/history.ts";
 
 function createRecord(
   traceContext?: HistoryRecord["traceContext"],
-): Pick<HistoryRecord, "id" | "traceContext"> {
+  processingMode?: HistoryRecord["generation"]["processingMode"],
+): Pick<HistoryRecord, "id" | "traceContext" | "generation"> {
   return {
     id: "record-1",
+    generation: {
+      processingMode: processingMode ?? "rewrite",
+    },
     ...(traceContext ? { traceContext } : {}),
   };
 }
@@ -84,6 +88,7 @@ test("buildContentTraceSummary supports rewrite-task source and latest issue", (
   assert.equal(summary.source.sourceKind, "rewrite_task");
   assert.equal(summary.source.topicClusterTitle, "跑步训练：配速与恢复");
   assert.equal(summary.source.representativeArticleCount, 2);
+  assert.equal(summary.source.processingMode, "rewrite");
   assert.equal(summary.generation.draftStatus, "success");
   assert.equal(summary.generation.finalizationStatus, "success");
   assert.equal(summary.generation.coverStatus, "failed");
@@ -91,6 +96,22 @@ test("buildContentTraceSummary supports rewrite-task source and latest issue", (
   assert.equal(summary.latestPublish?.status, "partial_success");
   assert.equal(summary.latestIssue?.type, "warning");
   assert.equal(summary.latestIssue?.message, "头图生成失败");
+});
+
+test("buildContentTraceSummary exposes translation processing mode", () => {
+  const summary = buildContentTraceSummary({
+    record: createRecord(
+      {
+        sourceKind: "direct_create",
+        createdFromPlatform: "wechat_article",
+      },
+      "translate_to_zh_article",
+    ),
+    publishResults: [],
+    executionEvents: [],
+  });
+
+  assert.equal(summary.source.processingMode, "translate_to_zh_article");
 });
 
 test("buildContentTraceSummary distinguishes skipped, not executed, and unknown generation states", () => {
@@ -213,6 +234,7 @@ test("buildContentTraceSummary falls back safely for old records without trace c
   });
 
   assert.equal(summary.source.sourceKind, "direct_create");
+  assert.equal(summary.source.processingMode, "rewrite");
   assert.equal(summary.generation.draftStatus, "unknown");
   assert.equal(summary.generation.finalizationStatus, "unknown");
   assert.equal(summary.generation.coverStatus, "unknown");

@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextResponse } from "next/server.js";
 
 import {
   PromptPresetError,
   setDefaultPromptPreset,
-} from "@/lib/settings/prompt-settings-server";
+} from "../../../../../lib/settings/prompt-settings-server.ts";
 
 type RouteContext = {
   params: Promise<{

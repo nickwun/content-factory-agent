@@ -1,10 +1,12 @@
 import type { PlatformType } from "../types/platform.ts";
 import type {
+  ContentProcessingMode,
   PromptPresetCorpusFile,
   PlatformPromptPresetGroup,
   PlatformPromptSetting,
   PromptPresetIdByPlatform,
 } from "./prompt-settings-types.ts";
+import { isContentProcessingMode } from "./prompt-settings-types.ts";
 
 type PromptPresetRepository = {
   list(platforms?: PlatformType[]): PlatformPromptSetting[];
@@ -17,6 +19,7 @@ type PromptPresetRepository = {
   create(input: {
     id: string;
     platform: PlatformType;
+    processingMode?: ContentProcessingMode;
     name: string;
     promptTemplate: string;
     isDefault: boolean;
@@ -26,7 +29,12 @@ type PromptPresetRepository = {
   }): PlatformPromptSetting | null;
   update(
     id: string,
-    input: { name?: string; promptTemplate?: string; updatedAt: string },
+    input: {
+      name?: string;
+      promptTemplate?: string;
+      processingMode?: ContentProcessingMode;
+      updatedAt: string;
+    },
   ): PlatformPromptSetting | null;
   delete(id: string): number;
   countByPlatform(platform: PlatformType): number;
@@ -59,6 +67,7 @@ type PromptPresetRepository = {
 
 type CreatePromptPresetInput = {
   platform: PlatformType;
+  processingMode?: ContentProcessingMode;
   name: string;
   promptTemplate: string;
 };
@@ -66,6 +75,7 @@ type CreatePromptPresetInput = {
 type UpdatePromptPresetInput = {
   name?: string;
   promptTemplate?: string;
+  processingMode?: ContentProcessingMode;
 };
 
 export class PromptPresetError extends Error {
@@ -102,6 +112,7 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
     createPromptPreset(input: CreatePromptPresetInput) {
       const name = normalizePresetName(input.name);
       const promptTemplate = input.promptTemplate.trim();
+      const processingMode = normalizeProcessingMode(input.processingMode);
 
       assertUniquePresetName(repository, input.platform, name);
 
@@ -109,6 +120,7 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
       const created = repository.create({
         id: crypto.randomUUID(),
         platform: input.platform,
+        processingMode,
         name,
         promptTemplate,
         isDefault: false,
@@ -137,6 +149,10 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
         input.promptTemplate !== undefined
           ? input.promptTemplate.trim()
           : current.promptTemplate;
+      const nextProcessingMode =
+        input.processingMode !== undefined
+          ? normalizeProcessingMode(input.processingMode)
+          : current.processingMode;
 
       if (nextName !== currentName) {
         assertUniquePresetName(repository, current.platform, nextName, currentId);
@@ -145,6 +161,7 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
       const updated = repository.update(id, {
         name: nextName,
         promptTemplate: nextTemplate,
+        processingMode: nextProcessingMode,
         updatedAt: new Date().toISOString(),
       });
 
@@ -170,6 +187,7 @@ export function createPromptPresetService(repository: PromptPresetRepository) {
       const duplicated = repository.create({
         id: crypto.randomUUID(),
         platform: current.platform,
+        processingMode: current.processingMode,
         name,
         promptTemplate: current.promptTemplate,
         isDefault: false,
@@ -358,6 +376,23 @@ function normalizePresetName(name: string) {
   }
 
   return normalized;
+}
+
+function normalizeProcessingMode(
+  processingMode: ContentProcessingMode | undefined,
+) {
+  if (processingMode === undefined) {
+    return "rewrite";
+  }
+
+  if (!isContentProcessingMode(processingMode)) {
+    throw new PromptPresetError(
+      "invalid_preset_id",
+      "提示词预设处理方式无效。",
+    );
+  }
+
+  return processingMode;
 }
 
 function assertUniquePresetName(

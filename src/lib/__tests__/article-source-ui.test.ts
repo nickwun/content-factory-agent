@@ -113,3 +113,21 @@ test("buildGenerateRequestPayload includes wechatFinalization when provided", ()
     },
   });
 });
+
+test("buildGenerateRequestPayload includes explicit processingMode when provided", () => {
+  const payload = buildGenerateRequestPayload({
+    requestSource: "composer_rewrite",
+    processingMode: "translate_to_zh_article",
+    selectedPlatforms: ["wechat_article"],
+    selectedPromptPresetByPlatform: {
+      wechat_article: "translate-preset",
+    },
+    rewriteSource: {
+      kind: "pasted_text",
+      extractedText: "This is an English transcript.",
+      charCount: 30,
+    },
+  });
+
+  assert.equal(payload.processingMode, "translate_to_zh_article");
+});

@@ -15,6 +15,7 @@ import {
   getDefaultPromptTemplates,
 } from "./prompt-settings-service.ts";
 import type {
+  ContentProcessingMode,
   PromptPresetCorpusFile,
   PlatformPromptSetting,
   PlatformPromptPresetGroup,
@@ -50,6 +51,7 @@ export function listPromptPresetGroups(
 
 export function createPromptPreset(input: {
   platform: PlatformType;
+  processingMode?: ContentProcessingMode;
   name: string;
   promptTemplate: string;
 }) {
@@ -58,7 +60,11 @@ export function createPromptPreset(input: {
 
 export function updatePromptPreset(
   id: string,
-  input: { name?: string; promptTemplate?: string },
+  input: {
+    name?: string;
+    promptTemplate?: string;
+    processingMode?: ContentProcessingMode;
+  },
 ) {
   return getPromptSettingsService().updatePromptPreset(id, input);
 }

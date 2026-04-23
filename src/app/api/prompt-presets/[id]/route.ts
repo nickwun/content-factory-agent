@@ -1,10 +1,11 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server.js";
 
 import {
   deletePromptPreset,
   PromptPresetError,
   updatePromptPreset,
-} from "@/lib/settings/prompt-settings-server";
+} from "../../../../lib/settings/prompt-settings-server.ts";
+import { isContentProcessingMode } from "../../../../lib/settings/prompt-settings-types.ts";
 
 type RouteContext = {
   params: Promise<{
@@ -15,6 +16,7 @@ type RouteContext = {
 type UpdatePromptPresetBody = {
   name?: unknown;
   promptTemplate?: unknown;
+  processingMode?: unknown;
 };
 
 export async function PATCH(request: NextRequest, context: RouteContext) {
@@ -28,10 +30,20 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
       typeof body.promptTemplate === "string" && body.promptTemplate.trim()
         ? body.promptTemplate.trim()
         : undefined;
+    const nextProcessingMode = isContentProcessingMode(body.processingMode)
+      ? body.processingMode
+      : undefined;
 
-    if (!nextName && !nextPromptTemplate) {
+    if (body.processingMode !== undefined && !nextProcessingMode) {
       return NextResponse.json(
-        { error: "name or promptTemplate is required" },
+        { error: "processingMode is invalid" },
+        { status: 400 },
+      );
+    }
+
+    if (!nextName && !nextPromptTemplate && !nextProcessingMode) {
+      return NextResponse.json(
+        { error: "name, promptTemplate or processingMode is required" },
         { status: 400 },
       );
     }
@@ -39,6 +51,7 @@ export async function PATCH(request: NextRequest, context: RouteContext) {
     const preset = updatePromptPreset(id, {
       ...(nextName ? { name: nextName } : {}),
       ...(nextPromptTemplate ? { promptTemplate: nextPromptTemplate } : {}),
+      ...(nextProcessingMode ? { processingMode: nextProcessingMode } : {}),
     });
 
     return NextResponse.json({ preset });

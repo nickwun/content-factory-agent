@@ -11,7 +11,12 @@ import {
 } from "../rewrite/rewrite-chunking.ts";
 import type { RewriteBrief } from "../rewrite/rewrite-brief-types.ts";
 import { isPlatformType, type PlatformType } from "../types/platform.ts";
-import type { PromptPresetIdByPlatform } from "../settings/prompt-settings-types.ts";
+import {
+  isContentProcessingMode,
+  type ContentProcessingMode,
+  type PlatformPromptSetting,
+  type PromptPresetIdByPlatform,
+} from "../settings/prompt-settings-types.ts";
 import type { RewriteMode } from "./generation-context.ts";
 import {
   parseWechatFinalizationPayload,
@@ -21,6 +26,7 @@ import type { GenerateRequestSource } from "../rewrite/article-source-ui.ts";
 
 type GenerateRequestBody = {
   requestSource?: unknown;
+  processingMode?: unknown;
   userPrompt?: unknown;
   selectedPlatforms?: unknown;
   rewriteSource?: unknown;
@@ -30,6 +36,7 @@ type GenerateRequestBody = {
 
 export type ParsedGenerateRequest = {
   requestSource?: GenerateRequestSource;
+  processingMode: ContentProcessingMode;
   userPrompt: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;
@@ -68,6 +75,7 @@ export function parseGenerateRequestPayload(
   body: GenerateRequestBody,
 ): ParsedGenerateRequest {
   const requestSource = parseRequestSource(body.requestSource);
+  const processingMode = parseProcessingMode(body.processingMode, requestSource);
   const userPrompt =
     typeof body.userPrompt === "string" ? body.userPrompt.trim() : "";
   const selectedPlatforms = Array.isArray(body.selectedPlatforms)
@@ -181,12 +189,34 @@ export function parseGenerateRequestPayload(
 
   return {
     requestSource,
+    processingMode,
     userPrompt,
     selectedPlatforms,
     rewriteSource,
     selectedPromptPresetByPlatform,
     wechatFinalization,
   };
+}
+
+export function assertPromptPresetsMatchProcessingMode(input: {
+  processingMode: ContentProcessingMode;
+  selectedPlatforms: PlatformType[];
+  promptSettings: PlatformPromptSetting[];
+}) {
+  for (const platform of input.selectedPlatforms) {
+    const setting = input.promptSettings.find((item) => item.platform === platform);
+
+    if (!setting) {
+      continue;
+    }
+
+    if (setting.processingMode !== input.processingMode) {
+      const platformLabel = PLATFORM_LABELS[platform] ?? platform;
+      throw new GenerateRequestValidationError(
+        `当前处理方式与 ${platformLabel} 的提示词预设不匹配，请重新选择匹配的预设。`,
+      );
+    }
+  }
 }
 
 function parseRequestSource(value: unknown): GenerateRequestSource | undefined {
@@ -200,6 +230,32 @@ function parseRequestSource(value: unknown): GenerateRequestSource | undefined {
 
   throw new GenerateRequestValidationError("requestSource is invalid");
 }
+
+function parseProcessingMode(
+  value: unknown,
+  requestSource: GenerateRequestSource | undefined,
+): ContentProcessingMode {
+  if (value === undefined) {
+    if (requestSource === "composer_rewrite") {
+      throw new GenerateRequestValidationError("新建内容页请求必须明确处理方式。");
+    }
+
+    return "rewrite";
+  }
+
+  if (isContentProcessingMode(value)) {
+    return value;
+  }
+
+  throw new GenerateRequestValidationError("processingMode is invalid");
+}
+
+const PLATFORM_LABELS: Record<PlatformType, string> = {
+  wechat_article: "公众号",
+  xiaohongshu: "小红书",
+  twitter: "Twitter",
+  video_script: "视频脚本",
+};
 
 export async function prepareRewriteGeneration(
   rewriteSource?: RewriteSource,

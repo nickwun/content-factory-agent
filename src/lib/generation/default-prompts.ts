@@ -18,6 +18,7 @@ export function getDefaultPromptSetting(
   return {
     id: `default-prompt-${platform}`,
     platform,
+    processingMode: "rewrite",
     name: "默认",
     promptTemplate: DEFAULT_PROMPT_TEMPLATES[platform],
     defaultTemplate: DEFAULT_PROMPT_TEMPLATES[platform],

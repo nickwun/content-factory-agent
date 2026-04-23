@@ -44,7 +44,26 @@ test("prompt preset migration seeds one default preset per platform from legacy 
   assert.equal(wechatGroup.presets.length, 1);
   assert.equal(wechatGroup.presets[0]?.name, "默认");
   assert.equal(wechatGroup.presets[0]?.isDefault, true);
+  assert.equal(wechatGroup.presets[0]?.processingMode, "rewrite");
   assert.equal(wechatGroup.presets[0]?.promptTemplate, "迁移后的公众号提示词");
+});
+
+test("prompt preset service can create and update translation presets", () => {
+  const service = createService();
+  const created = service.createPromptPreset({
+    platform: "wechat_article",
+    name: "YouTube 翻译整理",
+    promptTemplate: "把英文文稿整理成自然中文文章。",
+    processingMode: "translate_to_zh_article",
+  });
+
+  assert.equal(created.processingMode, "translate_to_zh_article");
+
+  const updated = service.updatePromptPreset(created.id, {
+    processingMode: "rewrite",
+  });
+
+  assert.equal(updated.processingMode, "rewrite");
 });
 
 test("prompt preset service enforces unique names within a platform", () => {

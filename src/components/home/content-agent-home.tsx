@@ -55,7 +55,10 @@ import {
   buildRewriteSourceErrorMessage,
   buildRewriteSourceNotice,
 } from "@/lib/rewrite/article-source-ui";
-import { buildComposerRewriteUserPrompt } from "@/lib/rewrite/prompt-preset-input";
+import {
+  buildComposerProcessingUserPrompt,
+  buildComposerRewriteUserPrompt,
+} from "@/lib/rewrite/prompt-preset-input";
 import { buildWechatFinalizationOptions } from "@/lib/generation/wechat-finalization";
 import {
   buildBatchRewriteSelectionMessage,
@@ -82,6 +85,7 @@ import {
 } from "@/lib/rewrite/rewrite-source";
 import type { PlatformPromptSetting } from "@/lib/settings/prompt-settings-types";
 import type {
+  ContentProcessingMode,
   PlatformPromptPresetGroup,
   PromptPresetIdByPlatform,
 } from "@/lib/settings/prompt-settings-types";
@@ -120,6 +124,23 @@ const PLATFORM_LABELS: Record<PlatformType, string> = {
   video_script: "视频脚本",
 };
 
+const PROCESSING_MODE_OPTIONS: Array<{
+  value: ContentProcessingMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "rewrite",
+    label: "仿写",
+    description: "基于素材改写成新文章。",
+  },
+  {
+    value: "translate_to_zh_article",
+    label: "翻译成中文文章",
+    description: "把英文文稿翻译并整理成自然中文文章。",
+  },
+];
+
 type ContentAgentHomeProps = {
   initialPromptPresetGroups: PlatformPromptPresetGroup[];
   initialRequestedHomeScreenMode?: string;
@@ -154,6 +175,8 @@ export function ContentAgentHome({
   const [composerPinned, setComposerPinned] = useState(false);
   const [rewriteComposerMode, setRewriteComposerMode] =
     useState<RewriteComposerMode>("single");
+  const [processingMode, setProcessingMode] =
+    useState<ContentProcessingMode>("rewrite");
   const [selectedPlatforms, setSelectedPlatforms] = useState<PlatformType[]>([]);
   const [promptPresetGroups, setPromptPresetGroups] = useState(
     initialPromptPresetGroups,
@@ -355,10 +378,27 @@ export function ContentAgentHome({
   const shouldShowWorkspace =
     resolvedScreenMode === "workspace" && Boolean(activeRecord && loaded);
   const composerSelectedPlatforms = resolveSelectedPlatformsForRewriteMode(
-    rewriteComposerMode,
+    processingMode === "translate_to_zh_article" ? "single" : rewriteComposerMode,
     selectedPlatforms,
   );
-  const isBatchComposerMode = rewriteComposerMode === "batch";
+  const isTranslateProcessingMode = processingMode === "translate_to_zh_article";
+  const isBatchComposerMode =
+    processingMode === "rewrite" && rewriteComposerMode === "batch";
+  const hasRequiredPromptPresets =
+    composerSelectedPlatforms.length > 0 &&
+    composerSelectedPlatforms.every((platform) => {
+      const presetId = selectedPromptPresetByPlatform[platform];
+      if (!presetId) {
+        return false;
+      }
+
+      return promptPresetGroups
+        .find((group) => group.platform === platform)
+        ?.presets.some(
+          (preset) =>
+            preset.id === presetId && preset.processingMode === processingMode,
+        );
+    });
   const wechatFinalization =
     composerSelectedPlatforms.includes("wechat_article")
       ? buildWechatFinalizationOptions(wechatFinalizationEnabled)
@@ -370,15 +410,17 @@ export function ContentAgentHome({
   const hasRequiredRewriteSource = isBatchComposerMode
     ? executableBatchItems.length > 0
     : Boolean(rewriteSource);
-  const hasRequiredPromptPresets =
-    composerSelectedPlatforms.length > 0 &&
-    composerSelectedPlatforms.every((platform) =>
-      Boolean(selectedPromptPresetByPlatform[platform]),
-    );
-
   useEffect(() => {
     batchRewriteItemsRef.current = batchRewriteItems;
   }, [batchRewriteItems]);
+
+  useEffect(() => {
+    if (processingMode === "translate_to_zh_article") {
+      setRewriteComposerMode("single");
+    }
+
+    setSelectedPromptPresetByPlatform({});
+  }, [processingMode]);
 
   const activePlatform = activeRecord?.workspace.activePlatform;
 
@@ -440,6 +482,7 @@ export function ContentAgentHome({
         fetch,
         buildGenerateRequestPayload({
           requestSource: "composer_rewrite",
+          processingMode,
           selectedPlatforms: composerSelectedPlatforms,
           rewriteSource,
           selectedPromptPresetByPlatform:
@@ -453,7 +496,8 @@ export function ContentAgentHome({
 
       const now = new Date().toISOString();
       const runId = createRunId("generation");
-      const resolvedUserPrompt = buildComposerRewriteUserPrompt({
+      const resolvedUserPrompt = buildComposerProcessingUserPrompt({
+        processingMode,
         selectedPromptSettings: data.promptSettings,
         rewriteSource,
       });
@@ -466,6 +510,7 @@ export function ContentAgentHome({
         promptSettings: data.promptSettings,
         generationInfo: data.draft.generationInfo,
         rewriteSource,
+        processingMode,
       });
 
       await createRecord(nextRecord);
@@ -547,6 +592,7 @@ export function ContentAgentHome({
           fetch,
           buildGenerateRequestPayload({
             requestSource: "composer_rewrite",
+            processingMode: "rewrite",
             selectedPlatforms: composerSelectedPlatforms,
             rewriteSource: nextItem.rewriteSource,
             selectedPromptPresetByPlatform:
@@ -573,6 +619,7 @@ export function ContentAgentHome({
           promptSettings: data.promptSettings,
           generationInfo: data.draft.generationInfo,
           rewriteSource: nextItem.rewriteSource,
+          processingMode: "rewrite",
         });
 
         await createRecord(nextRecord, { activate: false });
@@ -1289,54 +1336,109 @@ export function ContentAgentHome({
                 创作中心 / 新建内容
               </p>
               <h1 className="mt-3 max-w-3xl text-[2.6rem] font-semibold tracking-tight text-slate-900 md:text-[3rem] md:leading-[1.1]">
-                先仿写，再进入多平台工作区继续编辑
+                放入素材，选择处理方式，再进入工作区继续编辑
               </h1>
               <p className="mt-4 max-w-2xl text-[15px] leading-8 text-slate-600">
-                本页只支持基于素材仿写。先上传原文或素材，再选择提示词预设，系统会自动带入 preset 的 prompt 和语料摘要开始仿写。
+                本页只支持基于素材生成文章。上传或粘贴素材，再选择处理方式和提示词预设，系统会自动带入 preset 的 prompt 和语料摘要开始处理。
               </p>
 
               <div className="mt-8 space-y-5">
-                <div className="rounded-[34px] border border-slate-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(247,242,234,0.95))] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                <div className="rounded-[34px] border border-slate-200 bg-white/94 p-5 shadow-[0_18px_45px_rgba(15,23,42,0.05)]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
                         Step 1
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
-                        先准备素材，再进入仿写
+                        选择处理方式
                       </h2>
                     </div>
-                    <p className="text-sm leading-7 text-slate-400">
-                      本页只支持基于素材仿写，不支持无素材直接生成。
+                    <p className="text-sm leading-7 text-slate-500">
+                      先明确这批素材是要仿写，还是翻译整理成中文文章。
                     </p>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      disabled={batchGenerateState === "running"}
-                      onClick={() => setRewriteComposerMode("single")}
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        rewriteComposerMode === "single"
-                          ? "bg-slate-900 text-white"
-                          : "border border-black/10 bg-white text-slate-600"
-                      }`}
-                    >
-                      单篇仿写
-                    </button>
-                    <button
-                      type="button"
-                      disabled={batchGenerateState === "running"}
-                      onClick={() => setRewriteComposerMode("batch")}
-                      className={`rounded-full px-4 py-2 text-sm font-medium transition ${
-                        rewriteComposerMode === "batch"
-                          ? "bg-slate-900 text-white"
-                          : "border border-black/10 bg-white text-slate-600"
-                      }`}
-                    >
-                      批量仿写
-                    </button>
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    {PROCESSING_MODE_OPTIONS.map((option) => {
+                      const selected = processingMode === option.value;
+
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          disabled={batchGenerateState === "running"}
+                          onClick={() => setProcessingMode(option.value)}
+                          className={`rounded-[24px] border px-4 py-4 text-left transition ${
+                            selected
+                              ? "border-slate-900 bg-slate-900 text-white shadow-[0_18px_36px_rgba(15,23,42,0.20)]"
+                              : "border-black/10 bg-stone-50 text-slate-700 hover:border-slate-300 hover:bg-white"
+                          }`}
+                        >
+                          <span className="block text-sm font-semibold">
+                            {option.label}
+                          </span>
+                          <span
+                            className={`mt-2 block text-xs leading-6 ${
+                              selected ? "text-white/72" : "text-slate-500"
+                            }`}
+                          >
+                            {option.description}
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
+                </div>
+
+                <div className="rounded-[34px] border border-slate-200 bg-[linear-gradient(180deg,_rgba(255,255,255,0.98),_rgba(247,242,234,0.95))] p-5 shadow-[0_18px_45px_rgba(15,23,42,0.06)]">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
+                        Step 2
+                      </p>
+                      <h2 className="mt-2 text-lg font-semibold text-slate-900">
+                        {isTranslateProcessingMode
+                          ? "放入英文文稿"
+                          : "先准备素材，再进入仿写"}
+                      </h2>
+                    </div>
+                    <p className="text-sm leading-7 text-slate-400">
+                      本页只支持基于素材生成文章，不支持无素材直接生成。
+                    </p>
+                  </div>
+
+                  {isTranslateProcessingMode ? (
+                    <p className="mt-3 text-sm leading-7 text-slate-500">
+                      翻译模式首版只支持单篇。上传或粘贴英文文稿，系统会结合翻译类提示词预设，把素材整理成自然中文文章。
+                    </p>
+                  ) : (
+                    <div className="mt-5 flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        disabled={batchGenerateState === "running"}
+                        onClick={() => setRewriteComposerMode("single")}
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                          rewriteComposerMode === "single"
+                            ? "bg-slate-900 text-white"
+                            : "border border-black/10 bg-white text-slate-600"
+                        }`}
+                      >
+                        单篇仿写
+                      </button>
+                      <button
+                        type="button"
+                        disabled={batchGenerateState === "running"}
+                        onClick={() => setRewriteComposerMode("batch")}
+                        className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                          rewriteComposerMode === "batch"
+                            ? "bg-slate-900 text-white"
+                            : "border border-black/10 bg-white text-slate-600"
+                        }`}
+                      >
+                        批量仿写
+                      </button>
+                    </div>
+                  )}
 
                   {isBatchComposerMode ? (
                     <>
@@ -1368,7 +1470,9 @@ export function ContentAgentHome({
                   ) : (
                     <>
                       <p className="mt-3 text-sm leading-7 text-slate-500">
-                        先上传原文或素材，再选择提示词预设。系统会自动带入该预设的 prompt 和绑定语料摘要开始仿写。
+                        {isTranslateProcessingMode
+                          ? "上传或粘贴英文文稿，再选择翻译类提示词预设。系统会把口语化、重复较多的文稿整理成适合中文阅读的文章。"
+                          : "先上传原文或素材，再选择提示词预设。系统会自动带入该预设的 prompt 和绑定语料摘要开始仿写。"}
                       </p>
 
                       <ArticleSourcePanel
@@ -1402,14 +1506,14 @@ export function ContentAgentHome({
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
-                        Step 2
+                        Step 3
                       </p>
                       <h2 className="mt-2 text-lg font-semibold text-slate-900">
                         选择输出平台和提示词预设
                       </h2>
                     </div>
                     <p className="text-sm leading-7 text-slate-500">
-                      先选平台，再为当前已选平台明确指定要使用的提示词预设。
+                      先选平台，再为当前已选平台明确指定匹配处理方式的提示词预设。
                     </p>
                   </div>
 
@@ -1459,6 +1563,7 @@ export function ContentAgentHome({
                     selectedPlatforms={composerSelectedPlatforms}
                     presetGroups={promptPresetGroups}
                     selectedPresetIds={selectedPromptPresetByPlatform}
+                    processingMode={processingMode}
                     disabled={batchGenerateState === "running"}
                     onChange={(platform, presetId) =>
                       setSelectedPromptPresetByPlatform((current) => ({
@@ -1510,13 +1615,17 @@ export function ContentAgentHome({
                   <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div>
                       <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
-                        Step 3
+                        Step 4
                       </p>
                       <h2 className="mt-2 text-xl font-semibold">
-                        开始仿写并进入工作区继续编辑
+                        {isTranslateProcessingMode
+                          ? "开始翻译整理并进入工作区继续编辑"
+                          : "开始仿写并进入工作区继续编辑"}
                       </h2>
                       <p className="mt-2 text-sm leading-7 text-slate-500">
-                        只要素材和提示词预设都准备好，就可以直接开始仿写并进入后续编辑。
+                        {isTranslateProcessingMode
+                          ? "只要英文素材和翻译类提示词预设都准备好，就可以直接生成中文文章并进入后续编辑。"
+                          : "只要素材和提示词预设都准备好，就可以直接开始仿写并进入后续编辑。"}
                       </p>
                     </div>
 
@@ -1549,9 +1658,13 @@ export function ContentAgentHome({
                           ? batchGenerateState === "running"
                             ? "批量仿写中..."
                             : "开始批量仿写"
-                          : generateState === "generating"
-                          ? "仿写中..."
-                          : "开始仿写"}
+                          : isTranslateProcessingMode
+                            ? generateState === "generating"
+                              ? "翻译整理中..."
+                              : "开始翻译整理"
+                            : generateState === "generating"
+                              ? "仿写中..."
+                              : "开始仿写"}
                       </button>
                       <p
                         className={`text-sm ${
@@ -1577,10 +1690,14 @@ export function ContentAgentHome({
                             : !hasRequiredRewriteSource
                               ? "先上传原文或素材"
                               : !hasRequiredPromptPresets
-                                ? "再为已选平台选择提示词预设"
+                                ? isTranslateProcessingMode
+                                  ? "再为已选平台选择翻译类提示词预设"
+                                  : "再为已选平台选择提示词预设"
                                 : composerSelectedPlatforms.length === 0
                                   ? "再至少选择一个平台"
-                                  : "准备开始仿写"
+                                  : isTranslateProcessingMode
+                                    ? "准备开始翻译整理"
+                                    : "准备开始仿写"
                               }
                       </p>
                     </div>
@@ -1692,6 +1809,16 @@ export function ContentAgentHome({
                       >
                         {activeRecord.title}
                       </h1>
+                      <div className="mt-3 flex flex-wrap items-center gap-2">
+                        <span className="text-[11px] font-medium uppercase tracking-[0.16em] text-slate-400">
+                          处理方式
+                        </span>
+                        <span className="inline-flex rounded-full border border-black/8 bg-stone-100 px-3 py-1 text-[11px] font-medium text-slate-700">
+                          {getProcessingModeLabel(
+                            activeRecord.generation.processingMode ?? "rewrite",
+                          )}
+                        </span>
+                      </div>
                     </div>
 
                     <div className="self-start text-[10px] font-medium text-slate-400 whitespace-nowrap sm:text-[11px]">
@@ -1876,6 +2003,12 @@ function getGenerationSuccessMessage(
   }
 
   return `已使用真实 AI 生成${formatPlatformNames(generatedPlatforms)}草稿，${formatPlatformNames(mockPlatforms)}仍为模拟草稿。`;
+}
+
+function getProcessingModeLabel(
+  processingMode: ContentProcessingMode,
+) {
+  return processingMode === "translate_to_zh_article" ? "翻译整理" : "仿写";
 }
 
 function formatPlatformNames(platforms: PlatformType[]) {

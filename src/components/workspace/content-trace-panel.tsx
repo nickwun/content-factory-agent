@@ -53,6 +53,14 @@ export function ContentTracePanel({ summary }: ContentTracePanelProps) {
                     : "直接创作"}
               </span>
             </div>
+            {summary.source.processingMode ? (
+              <div className="flex items-center justify-between gap-3">
+                <span>处理方式</span>
+                <span className="rounded-full bg-stone-100 px-2.5 py-1 text-[11px] font-medium text-slate-600">
+                  {getProcessingModeLabel(summary.source.processingMode)}
+                </span>
+              </div>
+            ) : null}
             {summary.source.topicClusterTitle ? (
               <div className="space-y-1">
                 <p className="text-xs text-slate-400">主题标题</p>
@@ -191,6 +199,12 @@ export function ContentTracePanel({ summary }: ContentTracePanelProps) {
       </div>
     </section>
   );
+}
+
+function getProcessingModeLabel(
+  processingMode: NonNullable<ContentTraceSummary["source"]["processingMode"]>,
+) {
+  return processingMode === "translate_to_zh_article" ? "翻译整理" : "仿写";
 }
 
 function GenerationRow({

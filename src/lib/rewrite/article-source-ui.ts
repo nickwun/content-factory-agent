@@ -1,5 +1,8 @@
 import type { PlatformType } from "../types/platform.ts";
-import type { PromptPresetIdByPlatform } from "../settings/prompt-settings-types.ts";
+import type {
+  ContentProcessingMode,
+  PromptPresetIdByPlatform,
+} from "../settings/prompt-settings-types.ts";
 import type { WechatFinalizationOptions } from "../generation/wechat-finalization.ts";
 import {
   MAX_REWRITE_SOURCE_CHARS,
@@ -11,6 +14,7 @@ export type GenerateRequestSource = "composer_rewrite";
 
 type BuildGenerateRequestPayloadInput = {
   requestSource?: GenerateRequestSource;
+  processingMode?: ContentProcessingMode;
   userPrompt?: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;
@@ -23,6 +27,7 @@ export function buildGenerateRequestPayload(
 ) {
   return {
     ...(input.requestSource ? { requestSource: input.requestSource } : {}),
+    ...(input.processingMode ? { processingMode: input.processingMode } : {}),
     ...(typeof input.userPrompt === "string" && input.userPrompt.trim()
       ? { userPrompt: input.userPrompt.trim() }
       : {}),

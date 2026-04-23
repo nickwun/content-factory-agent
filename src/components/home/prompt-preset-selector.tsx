@@ -1,6 +1,7 @@
 "use client";
 
 import type {
+  ContentProcessingMode,
   PlatformPromptPresetGroup,
   PromptPresetIdByPlatform,
 } from "@/lib/settings/prompt-settings-types";
@@ -17,6 +18,7 @@ type PromptPresetSelectorProps = {
   selectedPlatforms: PlatformType[];
   presetGroups: PlatformPromptPresetGroup[];
   selectedPresetIds: PromptPresetIdByPlatform;
+  processingMode: ContentProcessingMode;
   onChange: (platform: PlatformType, presetId: string) => void;
   disabled?: boolean;
 };
@@ -25,6 +27,7 @@ export function PromptPresetSelector({
   selectedPlatforms,
   presetGroups,
   selectedPresetIds,
+  processingMode,
   onChange,
   disabled = false,
 }: PromptPresetSelectorProps) {
@@ -40,7 +43,7 @@ export function PromptPresetSelector({
             提示词预设（必选）
           </p>
           <p className="mt-2 text-sm leading-7 text-slate-500">
-            只对当前已选平台显示。开始仿写前，请为每个已选平台明确指定一套提示词预设。
+            只对当前已选平台显示。生成前，请为每个已选平台明确指定一套匹配当前处理方式的提示词预设。
           </p>
         </div>
       </div>
@@ -48,6 +51,9 @@ export function PromptPresetSelector({
       <div className="mt-4 grid gap-3">
         {selectedPlatforms.map((platform) => {
           const group = presetGroups.find((item) => item.platform === platform);
+          const availablePresets = (group?.presets ?? []).filter(
+            (preset) => preset.processingMode === processingMode,
+          );
           const currentPresetId = selectedPresetIds[platform] ?? "";
 
           return (
@@ -71,13 +77,18 @@ export function PromptPresetSelector({
                 <option value="">
                   请选择 {PLATFORM_LABELS[platform]} 的提示词预设
                 </option>
-                {(group?.presets ?? []).map((preset) => (
+                {availablePresets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
                     {preset.isDefault ? "（默认）" : ""}
                   </option>
                 ))}
               </select>
+              {availablePresets.length === 0 ? (
+                <span className="text-xs leading-6 text-rose-500">
+                  当前处理方式下还没有可用的提示词预设，请先到设置页创建。
+                </span>
+              ) : null}
             </label>
           );
         })}

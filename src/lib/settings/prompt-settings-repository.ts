@@ -141,6 +141,7 @@ function mapRow(row: PromptSettingRow): PlatformPromptSetting {
   return {
     id: `prompt-setting-${row.platform}`,
     platform: row.platform,
+    processingMode: "rewrite",
     name: "默认",
     promptTemplate: row.prompt_template,
     defaultTemplate: row.default_template,

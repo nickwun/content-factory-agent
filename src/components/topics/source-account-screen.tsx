@@ -574,6 +574,7 @@ export function SourceAccountScreen({
         promptSettings: result.promptSettings,
         generationInfo: result.draft.generationInfo,
         rewriteSource: createData.generatePayload.rewriteSource,
+        processingMode: "rewrite",
         traceContext: {
           sourceKind: "rewrite_task",
           topicClusterId: clusterId,

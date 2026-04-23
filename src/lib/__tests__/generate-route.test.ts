@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  assertPromptPresetsMatchProcessingMode,
   GenerateRequestValidationError,
   parseGenerateRequestPayload,
   prepareRewriteGeneration,
 } from "../generation/generate-route.ts";
 import { MAX_REWRITE_SOURCE_CHARS } from "../rewrite/rewrite-source.ts";
+import type { PlatformPromptSetting } from "../settings/prompt-settings-types.ts";
 
 test("generate route parser rejects direct generation requests without rewriteSource", () => {
   assert.throws(
@@ -26,6 +28,7 @@ test("generate route parser rejects composer rewrite requests without rewriteSou
     () =>
       parseGenerateRequestPayload({
         requestSource: "composer_rewrite",
+        processingMode: "rewrite",
         selectedPlatforms: ["wechat_article"],
         selectedPromptPresetByPlatform: {
           wechat_article: "preset-1",
@@ -42,6 +45,7 @@ test("generate route parser rejects composer rewrite requests without promptPres
     () =>
       parseGenerateRequestPayload({
         requestSource: "composer_rewrite",
+        processingMode: "rewrite",
         selectedPlatforms: ["wechat_article"],
         rewriteSource: {
           kind: "pasted_text",
@@ -60,6 +64,7 @@ test("generate route parser rejects legacy handwritten userPrompt on composer re
     () =>
       parseGenerateRequestPayload({
         requestSource: "composer_rewrite",
+        processingMode: "rewrite",
         userPrompt: "请帮我写得更像专栏文章",
         selectedPlatforms: ["wechat_article"],
         selectedPromptPresetByPlatform: {
@@ -80,6 +85,7 @@ test("generate route parser rejects legacy handwritten userPrompt on composer re
 test("generate route parser accepts composer rewrite requests with source marker and preset selection", () => {
   const parsed = parseGenerateRequestPayload({
     requestSource: "composer_rewrite",
+    processingMode: "rewrite",
     selectedPlatforms: ["wechat_article"],
     selectedPromptPresetByPlatform: {
       wechat_article: "preset-1",
@@ -92,11 +98,113 @@ test("generate route parser accepts composer rewrite requests with source marker
   });
 
   assert.equal(parsed.requestSource, "composer_rewrite");
+  assert.equal(parsed.processingMode, "rewrite");
   assert.equal(parsed.userPrompt, "");
   assert.deepEqual(parsed.selectedPlatforms, ["wechat_article"]);
   assert.deepEqual(parsed.selectedPromptPresetByPlatform, {
     wechat_article: "preset-1",
   });
+});
+
+test("generate route parser accepts composer translation requests with explicit processing mode", () => {
+  const parsed = parseGenerateRequestPayload({
+    requestSource: "composer_rewrite",
+    processingMode: "translate_to_zh_article",
+    selectedPlatforms: ["wechat_article"],
+    selectedPromptPresetByPlatform: {
+      wechat_article: "preset-translate",
+    },
+    rewriteSource: {
+      kind: "pasted_text",
+      extractedText: "This is an English transcript.",
+      charCount: 30,
+    },
+  });
+
+  assert.equal(parsed.requestSource, "composer_rewrite");
+  assert.equal(parsed.processingMode, "translate_to_zh_article");
+  assert.equal(parsed.userPrompt, "");
+});
+
+test("generate route parser rejects composer requests without processingMode", () => {
+  assert.throws(
+    () =>
+      parseGenerateRequestPayload({
+        requestSource: "composer_rewrite",
+        selectedPlatforms: ["wechat_article"],
+        selectedPromptPresetByPlatform: {
+          wechat_article: "preset-1",
+        },
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      error.message === "新建内容页请求必须明确处理方式。",
+  );
+});
+
+test("generate route parser rejects invalid processingMode", () => {
+  assert.throws(
+    () =>
+      parseGenerateRequestPayload({
+        requestSource: "composer_rewrite",
+        processingMode: "summarize",
+        selectedPlatforms: ["wechat_article"],
+        selectedPromptPresetByPlatform: {
+          wechat_article: "preset-1",
+        },
+        rewriteSource: {
+          kind: "pasted_text",
+          extractedText: "原文第一段\n\n原文第二段",
+          charCount: 12,
+        },
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      error.message === "processingMode is invalid",
+  );
+});
+
+test("generate route rejects translation mode with rewrite prompt preset", () => {
+  assert.throws(
+    () =>
+      assertPromptPresetsMatchProcessingMode({
+        processingMode: "translate_to_zh_article",
+        selectedPlatforms: ["wechat_article"],
+        promptSettings: [
+          buildPromptSetting({
+            id: "preset-rewrite",
+            processingMode: "rewrite",
+          }),
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      /处理方式与.*提示词预设不匹配/.test(error.message),
+  );
+});
+
+test("generate route rejects rewrite mode with translation prompt preset", () => {
+  assert.throws(
+    () =>
+      assertPromptPresetsMatchProcessingMode({
+        processingMode: "rewrite",
+        selectedPlatforms: ["wechat_article"],
+        promptSettings: [
+          buildPromptSetting({
+            id: "preset-translate",
+            processingMode: "translate_to_zh_article",
+          }),
+        ],
+      }),
+    (error: unknown) =>
+      error instanceof GenerateRequestValidationError &&
+      /处理方式与.*提示词预设不匹配/.test(error.message),
+  );
 });
 
 test("generate route parser rejects rewriteSource when extracted text becomes empty after cleaning", () => {
@@ -222,6 +330,22 @@ test("generate route parser rejects invalid wechatFinalization payloads", () => 
       /wechatFinalization/.test(error.message),
   );
 });
+
+function buildPromptSetting(
+  overrides: Partial<PlatformPromptSetting> = {},
+): PlatformPromptSetting {
+  return {
+    id: "preset-1",
+    platform: "wechat_article",
+    processingMode: "rewrite",
+    name: "测试预设",
+    promptTemplate: "按预设生成",
+    defaultTemplate: "默认提示词",
+    isDefault: true,
+    updatedAt: "2026-04-22T00:00:00.000Z",
+    ...overrides,
+  };
+}
 
 test("prepareRewriteGeneration keeps rewriteMode none when rewriteSource is absent", async () => {
   const prepared = await prepareRewriteGeneration(undefined);

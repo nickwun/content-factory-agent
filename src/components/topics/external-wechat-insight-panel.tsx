@@ -138,6 +138,11 @@ export function ExternalWechatInsightPanel() {
   const [rewriteTaskError, setRewriteTaskError] = useState<string | null>(null);
   const [rewriteTaskNotice, setRewriteTaskNotice] = useState<string | null>(null);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const canStartExternalRewrite =
+    rewriteTaskState !== "running" &&
+    selectedArticleIds.length >= 1 &&
+    selectedArticleIds.length <= 5 &&
+    Boolean(selectedPromptPresetId);
 
   useEffect(() => {
     let cancelled = false;
@@ -486,6 +491,7 @@ export function ExternalWechatInsightPanel() {
         promptSettings: result.promptSettings,
         generationInfo: result.draft.generationInfo,
         rewriteSource: payload.generatePayload.rewriteSource,
+        processingMode: "rewrite",
         traceContext: {
           sourceKind: "external_rewrite_task",
           externalRewriteTaskId: payload.externalRewriteTask.id,
@@ -754,7 +760,7 @@ export function ExternalWechatInsightPanel() {
           <div className="mt-4">
             <label className="flex max-w-[360px] flex-col gap-2">
               <span className="text-xs font-medium uppercase tracking-[0.18em] text-slate-400">
-                提示词预设（可选）
+                提示词预设（必选）
               </span>
               <select
                 value={selectedPromptPresetId}
@@ -762,7 +768,7 @@ export function ExternalWechatInsightPanel() {
                 disabled={rewriteTaskState === "running"}
                 className="rounded-2xl border border-black/10 bg-white px-4 py-2.5 text-sm text-slate-700 outline-none disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="">不使用额外提示词预设（保持原样）</option>
+                <option value="">请选择用于进入创作中心的提示词预设</option>
                 {promptPresets.map((preset) => (
                   <option key={preset.id} value={preset.id}>
                     {preset.name}
@@ -779,13 +785,22 @@ export function ExternalWechatInsightPanel() {
             </div>
             <button
               type="button"
-              disabled={rewriteTaskState === "running"}
+              disabled={!canStartExternalRewrite}
               onClick={() => void handleStartExternalRewrite()}
               className="rounded-full bg-slate-900 px-5 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
               {rewriteTaskState === "running" ? "正在进入创作中心..." : "进入创作中心仿写"}
             </button>
           </div>
+          {rewriteTaskState !== "error" && !rewriteTaskNotice ? (
+            <p className="mt-3 text-sm text-slate-500">
+              {selectedArticleIds.length < 1
+                ? "先勾选至少 1 篇正文已补全的文章，再进入创作中心。"
+                : !selectedPromptPresetId
+                  ? "再选择一套提示词预设，桥接到创作中心时会一起带入。"
+                  : "素材和提示词预设已就绪，可以进入创作中心仿写。"}
+            </p>
+          ) : null}
           {rewriteTaskNotice ? (
             <p className="mt-3 text-sm text-emerald-700">{rewriteTaskNotice}</p>
           ) : null}

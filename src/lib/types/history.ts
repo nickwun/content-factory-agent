@@ -1,3 +1,4 @@
+import type { ContentProcessingMode } from "../settings/prompt-settings-types";
 import type { PlatformType } from "./platform";
 
 export type PromptSettingsVersionMap = Partial<Record<PlatformType, string>>;
@@ -116,6 +117,7 @@ export type GenerationMetadata = {
   modelProvider: string;
   modelName: string;
   generatedAt: string;
+  processingMode?: ContentProcessingMode;
   hasRewriteSource?: boolean;
   rewriteSourceKind?: "pasted_text" | "uploaded_file";
   rewriteSourceName?: string;

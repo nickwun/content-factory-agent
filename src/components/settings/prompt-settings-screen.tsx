@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import type {
+  ContentProcessingMode,
   PromptPresetCorpusFile,
   PlatformPromptPresetGroup,
   PlatformPromptSetting,
@@ -15,6 +16,28 @@ const PLATFORM_OPTIONS: Array<{ value: PlatformType; label: string }> = [
   { value: "twitter", label: "Twitter" },
   { value: "video_script", label: "视频脚本" },
 ];
+
+const PROCESSING_MODE_OPTIONS: Array<{
+  value: ContentProcessingMode;
+  label: string;
+  description: string;
+}> = [
+  {
+    value: "rewrite",
+    label: "仿写",
+    description: "基于素材改写成新文章。",
+  },
+  {
+    value: "translate_to_zh_article",
+    label: "翻译成中文文章",
+    description: "把英文文稿翻译并整理成自然中文文章。",
+  },
+];
+
+const PROCESSING_MODE_LABELS: Record<ContentProcessingMode, string> = {
+  rewrite: "仿写",
+  translate_to_zh_article: "翻译",
+};
 
 type PromptSettingsScreenProps = {
   initialPresetGroups: PlatformPromptPresetGroup[];
@@ -169,6 +192,7 @@ export function PromptSettingsScreen({
         },
         body: JSON.stringify({
           platform: activePlatform,
+          processingMode: activePreset?.processingMode ?? "rewrite",
           name: buildNextPresetName(activeGroup.presets),
           promptTemplate:
             activeGroup.presets.find((preset) => preset.isDefault)?.defaultTemplate ??
@@ -205,6 +229,7 @@ export function PromptSettingsScreen({
         body: JSON.stringify({
           name: activePreset.name,
           promptTemplate: activePreset.promptTemplate,
+          processingMode: activePreset.processingMode,
         }),
       });
 
@@ -370,7 +395,9 @@ export function PromptSettingsScreen({
                         : "bg-white text-slate-400"
                   }`}
                 >
-                  {preset.isDefault ? "默认" : "预设"}
+                  {preset.isDefault
+                    ? "默认"
+                    : PROCESSING_MODE_LABELS[preset.processingMode]}
                 </span>
               </div>
               <p
@@ -474,6 +501,47 @@ export function PromptSettingsScreen({
                   }
                   className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
                 />
+              </label>
+            </div>
+
+            <div className="rounded-[24px] border border-black/8 bg-stone-50/90 px-4 py-4">
+              <label className="block">
+                <p className="text-xs font-medium uppercase tracking-[0.2em] text-slate-400">
+                  适用处理方式
+                </p>
+                <p className="mt-2 text-sm leading-7 text-slate-500">
+                  创作中心会根据处理方式过滤提示词预设，避免翻译和仿写规则混用。
+                </p>
+                <select
+                  value={activePreset.processingMode}
+                  onChange={(event) =>
+                    setPresetGroups((current) =>
+                      current.map((group) =>
+                        group.platform !== activePlatform
+                          ? group
+                          : {
+                              ...group,
+                              presets: group.presets.map((preset) =>
+                                preset.id === activePreset.id
+                                  ? {
+                                      ...preset,
+                                      processingMode: event.target
+                                        .value as ContentProcessingMode,
+                                    }
+                                  : preset,
+                              ),
+                            },
+                      ),
+                    )
+                  }
+                  className="mt-3 w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-amber-300 focus:ring-4 focus:ring-amber-100"
+                >
+                  {PROCESSING_MODE_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label} · {option.description}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { buildGenerationContext } from "@/lib/generation/generation-context";
 import {
+  assertPromptPresetsMatchProcessingMode,
   GenerateRequestValidationError,
   parseGenerateRequestPayload,
   prepareRewriteGeneration,
@@ -20,10 +21,11 @@ import {
   listPromptSettings,
   PromptPresetError,
 } from "@/lib/settings/prompt-settings-server";
-import { buildComposerRewriteUserPrompt } from "@/lib/rewrite/prompt-preset-input";
+import { buildComposerProcessingUserPrompt } from "@/lib/rewrite/prompt-preset-input";
 
 type GenerateRequestBody = {
   requestSource?: unknown;
+  processingMode?: unknown;
   userPrompt?: unknown;
   selectedPlatforms?: unknown;
   rewriteSource?: unknown;
@@ -37,6 +39,7 @@ export async function POST(request: NextRequest) {
     const {
       userPrompt,
       requestSource,
+      processingMode,
       selectedPlatforms,
       rewriteSource,
       selectedPromptPresetByPlatform,
@@ -51,9 +54,16 @@ export async function POST(request: NextRequest) {
       selectedPlatforms,
       selectedPromptPresetByPlatform,
     );
+    assertPromptPresetsMatchProcessingMode({
+      processingMode,
+      selectedPlatforms,
+      promptSettings,
+    });
+
     const resolvedUserPrompt =
       requestSource === "composer_rewrite" && preparedRewrite.rewriteSource
-        ? buildComposerRewriteUserPrompt({
+        ? buildComposerProcessingUserPrompt({
+            processingMode,
             selectedPromptSettings: promptSettings,
             rewriteSource: preparedRewrite.rewriteSource,
           })

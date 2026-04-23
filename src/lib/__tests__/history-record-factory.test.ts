@@ -44,6 +44,7 @@ test("createHistoryRecord defaults traceContext to direct_create", () => {
     sourceKind: "direct_create",
     createdFromPlatform: "wechat_article",
   });
+  assert.equal(record.generation.processingMode, "rewrite");
 });
 
 test("createHistoryRecord keeps rewrite-task traceContext when explicitly provided", () => {
@@ -116,4 +117,26 @@ test("createHistoryRecord keeps external-rewrite-task traceContext when explicit
     externalArticleCount: 3,
     createdFromPlatform: "wechat_article",
   });
+});
+
+test("createHistoryRecord keeps explicit translation processing mode", () => {
+  const record = createHistoryRecord({
+    userPrompt: "请把这篇英文视频文稿翻译整理成中文文章",
+    selectedPlatforms: ["wechat_article"],
+    now: "2026-04-15T09:30:00.000Z",
+    autoTitle: "长期跑步如何保护膝盖",
+    content: {
+      wechat_article: {
+        platform: "wechat_article",
+        title: "长期跑步如何保护膝盖",
+        markdownBody: "正文",
+        blocks: [{ id: "p-1", type: "paragraph", text: "正文" }],
+      },
+    },
+    promptSettings,
+    generationInfo,
+    processingMode: "translate_to_zh_article",
+  });
+
+  assert.equal(record.generation.processingMode, "translate_to_zh_article");
 });

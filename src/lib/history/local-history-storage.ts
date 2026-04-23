@@ -122,13 +122,24 @@ function writeAll(
 
 function normalizeHistoryRecord(record: HistoryRecord): HistoryRecord {
   const wechatArticle = record.content.wechat_article;
+  const processingMode = record.generation.processingMode ?? "rewrite";
 
   if (!wechatArticle) {
-    return record;
+    return {
+      ...record,
+      generation: {
+        ...record.generation,
+        processingMode,
+      },
+    };
   }
 
   return {
     ...record,
+    generation: {
+      ...record.generation,
+      processingMode,
+    },
     content: {
       ...record.content,
       wechat_article: normalizeWechatArticleMarkdownBody(wechatArticle),

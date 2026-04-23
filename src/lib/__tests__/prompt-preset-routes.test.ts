@@ -15,6 +15,11 @@ import {
 } from "../settings/prompt-preset-repository.ts";
 import { getDefaultPromptTemplates } from "../settings/prompt-settings-service.ts";
 import {
+  GET as listPresetRoute,
+  POST as createPresetRoute,
+} from "../../app/api/prompt-presets/route.ts";
+import { PATCH as updatePresetRoute } from "../../app/api/prompt-presets/[id]/route.ts";
+import {
   GET as listCorpusRoute,
   POST as uploadCorpusRoute,
 } from "../../app/api/prompt-presets/[id]/corpus/route.ts";
@@ -114,6 +119,80 @@ test("prompt preset corpus routes upload, replace, and delete corpus files", asy
   };
 
   assert.equal(finalListPayload.corpusFiles.length, 0);
+});
+
+test("prompt preset routes preserve processing mode for translation presets", async () => {
+  createTempDb();
+
+  const createResponse = await createPresetRoute(
+    new Request("http://localhost/api/prompt-presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        platform: "wechat_article",
+        name: "YouTube 翻译整理",
+        promptTemplate: "把英文文稿整理成自然中文文章。",
+        processingMode: "translate_to_zh_article",
+      }),
+    }),
+  );
+
+  assert.equal(createResponse.status, 201);
+  const createPayload = (await createResponse.json()) as {
+    preset: { id: string; processingMode: string };
+  };
+  assert.equal(createPayload.preset.processingMode, "translate_to_zh_article");
+
+  const updateResponse = await updatePresetRoute(
+    new Request(`http://localhost/api/prompt-presets/${createPayload.preset.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        processingMode: "rewrite",
+      }),
+    }),
+    { params: Promise.resolve({ id: createPayload.preset.id }) },
+  );
+
+  assert.equal(updateResponse.status, 200);
+  const updatePayload = (await updateResponse.json()) as {
+    preset: { processingMode: string };
+  };
+  assert.equal(updatePayload.preset.processingMode, "rewrite");
+
+  const listResponse = await listPresetRoute({
+    nextUrl: new URL("http://localhost/api/prompt-presets"),
+  } as never);
+  const listPayload = (await listResponse.json()) as {
+    presetGroups: Array<{
+      platform: string;
+      presets: Array<{ id: string; processingMode: string }>;
+    }>;
+  };
+  const listedPreset = listPayload.presetGroups
+    .find((group) => group.platform === "wechat_article")
+    ?.presets.find((preset) => preset.id === createPayload.preset.id);
+
+  assert.equal(listedPreset?.processingMode, "rewrite");
+});
+
+test("prompt preset routes reject invalid processing mode", async () => {
+  createTempDb();
+
+  const response = await createPresetRoute(
+    new Request("http://localhost/api/prompt-presets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        platform: "wechat_article",
+        name: "错误模式",
+        promptTemplate: "任意提示词",
+        processingMode: "summarize",
+      }),
+    }),
+  );
+
+  assert.equal(response.status, 400);
 });
 
 function createTempDb() {

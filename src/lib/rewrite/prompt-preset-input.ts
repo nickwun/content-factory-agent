@@ -1,5 +1,10 @@
 import type { RewriteSource } from "./rewrite-source.ts";
-import type { PlatformPromptSetting, PromptPresetCorpusFile, PromptPresetCorpusSummary } from "../settings/prompt-settings-types.ts";
+import type {
+  ContentProcessingMode,
+  PlatformPromptSetting,
+  PromptPresetCorpusFile,
+  PromptPresetCorpusSummary,
+} from "../settings/prompt-settings-types.ts";
 
 export type PromptPresetInput = {
   presetId: string;
@@ -53,11 +58,19 @@ export function buildComposerRewriteUserPrompt(input: {
   selectedPromptSettings: PlatformPromptSetting[];
   rewriteSource: RewriteSource;
 }) {
+  return buildComposerProcessingUserPrompt({
+    processingMode: "rewrite",
+    ...input,
+  });
+}
+
+export function buildComposerProcessingUserPrompt(input: {
+  processingMode: ContentProcessingMode;
+  selectedPromptSettings: PlatformPromptSetting[];
+  rewriteSource: RewriteSource;
+}) {
   const lines = [
-    "请基于当前素材直接开始仿写。",
-    `当前素材约 ${input.rewriteSource.charCount} 字，优先围绕它的核心信息重写。`,
-    "优先保留原文的核心观点、结构推进和阅读节奏，再按所选提示词预设重写表达。",
-    "不要脱离素材另起一篇，也不要把内容写成空泛总结。",
+    ...buildComposerModeInstructionLines(input.processingMode, input.rewriteSource),
   ];
 
   for (const setting of input.selectedPromptSettings) {
@@ -84,6 +97,28 @@ export function buildComposerRewriteUserPrompt(input: {
   }
 
   return lines.join("\n");
+}
+
+function buildComposerModeInstructionLines(
+  processingMode: ContentProcessingMode,
+  rewriteSource: RewriteSource,
+) {
+  if (processingMode === "translate_to_zh_article") {
+    return [
+      "请基于当前英文素材翻译并整理成自然中文文章。",
+      `当前素材约 ${rewriteSource.charCount} 字，优先保留原文的核心信息和重要细节。`,
+      "不要逐句直译成字幕稿；请合并口语重复、整理结构和段落，让成稿适合中文阅读和发布。",
+      "保留原文核心观点、例子、论证关系和关键事实，不要脱离素材虚构。",
+      "按所选提示词预设和语料摘要控制中文文章的风格、结构和篇幅。",
+    ];
+  }
+
+  return [
+    "请基于当前素材直接开始仿写。",
+    `当前素材约 ${rewriteSource.charCount} 字，优先围绕它的核心信息重写。`,
+    "优先保留原文的核心观点、结构推进和阅读节奏，再按所选提示词预设重写表达。",
+    "不要脱离素材另起一篇，也不要把内容写成空泛总结。",
+  ];
 }
 
 function buildCorpusReferenceLines(promptPresetInput: PromptPresetInput) {

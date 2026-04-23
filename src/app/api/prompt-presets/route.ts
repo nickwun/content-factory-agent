@@ -1,14 +1,16 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server.js";
 
 import {
   createPromptPreset,
   listPromptPresetGroups,
   PromptPresetError,
-} from "@/lib/settings/prompt-settings-server";
-import { isPlatformType } from "@/lib/types/platform";
+} from "../../../lib/settings/prompt-settings-server.ts";
+import { isContentProcessingMode } from "../../../lib/settings/prompt-settings-types.ts";
+import { isPlatformType } from "../../../lib/types/platform.ts";
 
 type CreatePromptPresetBody = {
   platform?: unknown;
+  processingMode?: unknown;
   name?: unknown;
   promptTemplate?: unknown;
 };
@@ -51,8 +53,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (
+      body.processingMode !== undefined &&
+      !isContentProcessingMode(body.processingMode)
+    ) {
+      return NextResponse.json(
+        { error: "processingMode is invalid" },
+        { status: 400 },
+      );
+    }
+
     const preset = createPromptPreset({
       platform: body.platform,
+      ...(isContentProcessingMode(body.processingMode)
+        ? { processingMode: body.processingMode }
+        : {}),
       name: body.name.trim(),
       promptTemplate: body.promptTemplate.trim(),
     });

@@ -24,6 +24,7 @@ export function buildContentTraceSummary(
   return {
     source: {
       sourceKind: input.record?.traceContext?.sourceKind ?? "direct_create",
+      processingMode: input.record?.generation?.processingMode ?? "rewrite",
       ...(input.record?.traceContext?.topicClusterTitle
         ? { topicClusterTitle: input.record.traceContext.topicClusterTitle }
         : {}),

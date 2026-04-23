@@ -2,6 +2,7 @@ import type { GeneratedDraftResult } from "./generation-service.ts";
 import type { WechatFinalizationOptions } from "./wechat-finalization.ts";
 import type { RewriteSource } from "../rewrite/rewrite-source.ts";
 import type {
+  ContentProcessingMode,
   PlatformPromptSetting,
   PromptPresetIdByPlatform,
 } from "../settings/prompt-settings-types.ts";
@@ -9,6 +10,7 @@ import type { PlatformType } from "../types/platform.ts";
 
 type GenerateRequestPayload = {
   requestSource?: "composer_rewrite";
+  processingMode?: ContentProcessingMode;
   userPrompt?: string;
   selectedPlatforms: PlatformType[];
   rewriteSource?: RewriteSource;

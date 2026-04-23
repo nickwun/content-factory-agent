@@ -49,6 +49,7 @@ export type ExecutionEvent = {
 export type ContentTraceSummary = {
   source: {
     sourceKind: "direct_create" | "rewrite_task" | "external_rewrite_task";
+    processingMode?: "rewrite" | "translate_to_zh_article";
     topicClusterTitle?: string;
     rewriteTaskId?: string;
     externalKeyword?: string;

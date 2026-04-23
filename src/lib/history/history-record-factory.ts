@@ -1,6 +1,9 @@
 import type { DraftGenerationInfo } from "../generation/generation-service.ts";
 import type { RewriteSource } from "../rewrite/rewrite-source.ts";
-import type { PlatformPromptSetting } from "../settings/prompt-settings-types.ts";
+import type {
+  ContentProcessingMode,
+  PlatformPromptSetting,
+} from "../settings/prompt-settings-types.ts";
 import type { HistoryRecord } from "../types/history.ts";
 import type { PlatformType } from "../types/platform.ts";
 
@@ -14,6 +17,7 @@ export function createHistoryRecord(input: {
   generationInfo: DraftGenerationInfo;
   rewriteSource?: RewriteSource | null;
   traceContext?: HistoryRecord["traceContext"];
+  processingMode?: ContentProcessingMode;
 }): HistoryRecord {
   const settingsByPlatform = Object.fromEntries(
     input.promptSettings.map((setting) => [setting.platform, setting]),
@@ -34,6 +38,7 @@ export function createHistoryRecord(input: {
       modelProvider: input.generationInfo.modelProvider,
       modelName: input.generationInfo.modelName,
       generatedAt: input.now,
+      processingMode: input.processingMode ?? "rewrite",
       hasRewriteSource: Boolean(input.rewriteSource),
       ...(input.rewriteSource
         ? {

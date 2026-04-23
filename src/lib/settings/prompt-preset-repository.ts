@@ -12,6 +12,7 @@ import type {
 type PromptPresetRow = {
   id: string;
   platform: PlatformType;
+  processing_mode: PlatformPromptSetting["processingMode"] | null;
   name: string;
   prompt_template: string;
   is_default: number;
@@ -21,7 +22,7 @@ type PromptPresetRow = {
 };
 
 const PROMPT_PRESET_COLUMNS =
-  "id, platform, name, prompt_template, is_default, version, created_at, updated_at";
+  "id, platform, processing_mode, name, prompt_template, is_default, version, created_at, updated_at";
 
 type LegacyPromptSetting = {
   platform: PlatformType;
@@ -99,6 +100,7 @@ export function createPromptPresetRepository(db: Database.Database) {
     create(input: {
       id: string;
       platform: PlatformType;
+      processingMode?: PlatformPromptSetting["processingMode"];
       name: string;
       promptTemplate: string;
       isDefault: boolean;
@@ -110,16 +112,18 @@ export function createPromptPresetRepository(db: Database.Database) {
         `INSERT INTO platform_prompt_presets (
           id,
           platform,
+          processing_mode,
           name,
           prompt_template,
           is_default,
           version,
           created_at,
           updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         input.id,
         input.platform,
+        input.processingMode ?? "rewrite",
         input.name,
         input.promptTemplate,
         input.isDefault ? 1 : 0,
@@ -131,7 +135,15 @@ export function createPromptPresetRepository(db: Database.Database) {
       return this.getById(input.id);
     },
 
-    update(id: string, input: { name?: string; promptTemplate?: string; updatedAt: string }) {
+    update(
+      id: string,
+      input: {
+        name?: string;
+        promptTemplate?: string;
+        processingMode?: PlatformPromptSetting["processingMode"];
+        updatedAt: string;
+      },
+    ) {
       const current = this.getById(id);
 
       if (!current) {
@@ -140,11 +152,12 @@ export function createPromptPresetRepository(db: Database.Database) {
 
       db.prepare(
         `UPDATE platform_prompt_presets
-         SET name = ?, prompt_template = ?, updated_at = ?
+         SET name = ?, prompt_template = ?, processing_mode = ?, updated_at = ?
          WHERE id = ?`,
       ).run(
         input.name ?? current.name,
         input.promptTemplate ?? current.promptTemplate,
+        input.processingMode ?? current.processingMode ?? "rewrite",
         input.updatedAt,
         id,
       );
@@ -346,12 +359,20 @@ export function ensurePromptPresetsTable(
       platform TEXT NOT NULL,
       name TEXT NOT NULL,
       prompt_template TEXT NOT NULL,
+      processing_mode TEXT NOT NULL DEFAULT 'rewrite',
       is_default INTEGER NOT NULL DEFAULT 0,
       version TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )`,
   ).run();
+
+  ensureColumn(
+    db,
+    "platform_prompt_presets",
+    "processing_mode",
+    "TEXT NOT NULL DEFAULT 'rewrite'",
+  );
 
   db.prepare(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_prompt_presets_platform_name
@@ -399,13 +420,14 @@ export function ensurePromptPresetsTable(
     `INSERT INTO platform_prompt_presets (
       id,
       platform,
+      processing_mode,
       name,
       prompt_template,
       is_default,
       version,
       created_at,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
 
   const now = new Date().toISOString();
@@ -414,6 +436,7 @@ export function ensurePromptPresetsTable(
     insert.run(
       `prompt-preset-${setting.platform}-default`,
       setting.platform,
+      "rewrite",
       "默认",
       setting.promptTemplate,
       1,
@@ -435,6 +458,7 @@ function mapRow(db: Database.Database, row: PromptPresetRow): PlatformPromptSett
   return {
     id: row.id,
     platform: row.platform,
+    processingMode: row.processing_mode ?? "rewrite",
     name: row.name,
     promptTemplate: row.prompt_template,
     defaultTemplate: getDefaultPromptTemplate(row.platform),
@@ -446,6 +470,23 @@ function mapRow(db: Database.Database, row: PromptPresetRow): PlatformPromptSett
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function ensureColumn(
+  db: Database.Database,
+  tableName: string,
+  columnName: string,
+  columnDefinition: string,
+) {
+  const columns = db
+    .prepare(`PRAGMA table_info(${tableName})`)
+    .all() as Array<{ name: string }>;
+
+  if (!columns.some((column) => column.name === columnName)) {
+    db.prepare(
+      `ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDefinition}`,
+    ).run();
+  }
 }
 
 function mapCorpusRow(row: PromptPresetCorpusFileRow): PromptPresetCorpusFile {
