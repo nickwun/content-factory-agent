@@ -1,4 +1,5 @@
 import type { XiaohongshuContent } from "../types/history.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 
 export type RawXiaohongshuOutput = {
   title?: unknown;
@@ -149,7 +150,7 @@ function normalizeImageSuggestions(rawImageSuggestions: unknown) {
     )
     .slice(0, MAX_IMAGE_SUGGESTIONS)
     .map((image, index) => ({
-      id: crypto.randomUUID(),
+      id: createRandomId("xiaohongshu-output"),
       index: index + 1,
       title: image.title,
       description: image.description,
@@ -203,7 +204,7 @@ function ensureMinimumImageSuggestions(
 
 function createFallbackImageSuggestions() {
   return Array.from({ length: MIN_IMAGE_SUGGESTIONS }, (_, index) => ({
-    id: crypto.randomUUID(),
+    id: createRandomId("xiaohongshu-output"),
     index: index + 1,
     title: `${DEFAULT_IMAGE_TITLE} ${index + 1}`,
     description: DEFAULT_IMAGE_DESCRIPTION,

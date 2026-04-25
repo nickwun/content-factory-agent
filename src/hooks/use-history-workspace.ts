@@ -7,6 +7,7 @@ import { createLocalHistoryStorage } from "@/lib/history/local-history-storage";
 import { searchHistoryRecords } from "@/lib/history/history-search";
 import type { HistoryRecord, PlatformContentMap } from "@/lib/types/history";
 import type { PlatformType, EditorSaveState } from "@/lib/types/platform";
+import { createRandomId } from "@/lib/utils/create-random-id";
 import {
   getVisibleSaveState,
   type PersistenceSource,
@@ -141,7 +142,7 @@ export function useHistoryWorkspace(
       setPendingSaveRecord({
         record: updated,
         source: "view",
-        requestId: crypto.randomUUID(),
+        requestId: createRandomId("workspace-view"),
       });
     },
     [records, replaceRecord],
@@ -185,7 +186,7 @@ export function useHistoryWorkspace(
       setPendingSaveRecord({
         record: nextRecord,
         source,
-        requestId: crypto.randomUUID(),
+        requestId: createRandomId("workspace-active"),
       });
     },
     [activeRecordId],
@@ -230,7 +231,7 @@ export function useHistoryWorkspace(
       setPendingSaveRecord({
         record: nextRecord,
         source,
-        requestId: crypto.randomUUID(),
+        requestId: createRandomId("workspace-record"),
       });
     },
     [activeRecordId],

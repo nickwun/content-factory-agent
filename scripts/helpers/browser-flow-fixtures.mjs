@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { chromium } from "playwright";
 
 export const BASE_URL = process.env.BASE_URL ?? "http://localhost:3000";
+export const BASIC_AUTH_USER = process.env.BASIC_AUTH_USER ?? "";
+export const BASIC_AUTH_PASSWORD = process.env.BASIC_AUTH_PASSWORD ?? "";
 export const HISTORY_STORAGE_KEY = "content-agent-history";
 export const PUBLISH_RESULT_STORAGE_KEY = "content-agent-publish-results";
 export const EXECUTION_EVENT_STORAGE_KEY = "content-agent-observability-events";
@@ -14,6 +16,14 @@ export async function launchAcceptancePage(options = {}) {
   const browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({
     viewport: options.viewport ?? DEFAULT_VIEWPORT,
+    ...(hasBasicAuth()
+      ? {
+          httpCredentials: {
+            username: BASIC_AUTH_USER,
+            password: BASIC_AUTH_PASSWORD,
+          },
+        }
+      : {}),
   });
   const page = await context.newPage();
 
@@ -59,7 +69,9 @@ export async function ensurePromptPreset(input) {
     return existingPreset;
   }
 
-  const response = await fetch(`${input.baseUrl ?? BASE_URL}/api/prompt-presets`, {
+  const response = await fetchWithOptionalBasicAuth(
+    `${input.baseUrl ?? BASE_URL}/api/prompt-presets`,
+    {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -70,7 +82,8 @@ export async function ensurePromptPreset(input) {
       name: input.name,
       promptTemplate: input.promptTemplate,
     }),
-  });
+    },
+  );
   const payload = await response.json();
 
   if (!response.ok) {
@@ -85,7 +98,7 @@ export async function ensurePromptPreset(input) {
 }
 
 export async function listPromptPresetGroups(baseUrl = BASE_URL) {
-  const response = await fetch(`${baseUrl}/api/prompt-presets`);
+  const response = await fetchWithOptionalBasicAuth(`${baseUrl}/api/prompt-presets`);
   const payload = await response.json();
 
   if (!response.ok) {
@@ -257,6 +270,30 @@ export async function createFailureScreenshot(page, fileNamePrefix) {
   );
   await page.screenshot({ path: filePath, fullPage: true });
   return filePath;
+}
+
+function hasBasicAuth() {
+  return Boolean(BASIC_AUTH_USER && BASIC_AUTH_PASSWORD);
+}
+
+function getBasicAuthHeader() {
+  return `Basic ${Buffer.from(
+    `${BASIC_AUTH_USER}:${BASIC_AUTH_PASSWORD}`,
+  ).toString("base64")}`;
+}
+
+async function fetchWithOptionalBasicAuth(input, init = {}) {
+  if (!hasBasicAuth()) {
+    return fetch(input, init);
+  }
+
+  const headers = new Headers(init.headers ?? {});
+  headers.set("Authorization", getBasicAuthHeader());
+
+  return fetch(input, {
+    ...init,
+    headers,
+  });
 }
 
 export function createFlowReport(flowName) {

@@ -1,4 +1,5 @@
 import type { WechatArticleContent, WechatBlock } from "../types/history.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 import {
   parseWechatMarkdownToBlocks,
   serializeWechatBlocksToMarkdown,
@@ -40,7 +41,7 @@ export function normalizeWechatArticleOutput(
       ? blocks
       : [
           {
-            id: crypto.randomUUID(),
+            id: createRandomId("wechat-output"),
             type: "paragraph" as const,
             text: DEFAULT_WECHAT_PLACEHOLDER,
           },
@@ -89,7 +90,7 @@ function normalizeBlock(rawBlock: unknown): WechatBlock | null {
 
   if (blockType === "divider") {
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-output"),
       type: "divider",
     };
   }
@@ -109,7 +110,7 @@ function normalizeBlock(rawBlock: unknown): WechatBlock | null {
     }
 
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-output"),
       type: "list",
       items,
     };
@@ -117,7 +118,7 @@ function normalizeBlock(rawBlock: unknown): WechatBlock | null {
 
   if (blockType === "heading") {
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-output"),
       type: "heading",
       level: candidate.level === 3 ? 3 : 2,
       text: text || DEFAULT_WECHAT_PLACEHOLDER,
@@ -126,14 +127,14 @@ function normalizeBlock(rawBlock: unknown): WechatBlock | null {
 
   if (blockType === "quote") {
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-output"),
       type: "quote",
       text: text || DEFAULT_WECHAT_PLACEHOLDER,
     };
   }
 
   return {
-    id: crypto.randomUUID(),
+    id: createRandomId("wechat-output"),
     type: "paragraph",
     text: text || DEFAULT_WECHAT_PLACEHOLDER,
   };

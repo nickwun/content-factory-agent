@@ -25,6 +25,7 @@ import {
   createXiaohongshuPublishSnapshot,
 } from "@/lib/publish/xiaohongshu-publish-ui";
 import type { HistoryRecord } from "@/lib/types/history";
+import { createRandomId } from "@/lib/utils/create-random-id";
 
 type XiaohongshuPublishDialogProps = {
   open: boolean;
@@ -64,7 +65,7 @@ export function XiaohongshuPublishDialog({
     setErrorMessage(null);
 
     const runId = createRunId("publish");
-    const publishResultId = crypto.randomUUID();
+    const publishResultId = createRandomId("xiaohongshu-publish");
     const startedAt = new Date().toISOString();
 
     try {

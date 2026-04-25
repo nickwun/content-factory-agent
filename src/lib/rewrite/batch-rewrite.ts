@@ -1,4 +1,5 @@
 import type { PlatformType } from "../types/platform.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 import type { RewriteFileLike } from "./rewrite-file-parser.ts";
 import type { RewriteSource } from "./rewrite-source.ts";
 
@@ -123,7 +124,7 @@ export function createBatchRewriteReadyItem(
   rewriteSource: RewriteSource,
 ): BatchRewriteItem {
   return {
-    id: crypto.randomUUID(),
+    id: createRandomId("batch-rewrite"),
     fileName: file.name,
     fileSize: file.size,
     lastModified: file.lastModified,
@@ -140,7 +141,7 @@ export function createBatchRewriteFailedItem(
   parseError: string,
 ): BatchRewriteItem {
   return {
-    id: crypto.randomUUID(),
+    id: createRandomId("batch-rewrite"),
     fileName: file.name,
     fileSize: file.size,
     lastModified: file.lastModified,

@@ -1,7 +1,8 @@
 import type { WechatBlock } from "../types/history";
+import { createRandomId } from "../utils/create-random-id";
 
 const EMPTY_PARAGRAPH = (): WechatBlock => ({
-  id: crypto.randomUUID(),
+  id: createRandomId("wechat-continuous"),
   type: "paragraph",
   text: "",
 });
@@ -56,7 +57,7 @@ export function parseContinuousTextToWechatBlocks(text: string): WechatBlock[] {
 function parseSectionToBlock(section: string): WechatBlock | null {
   if (section === "---") {
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-continuous"),
       type: "divider",
     };
   }
@@ -69,7 +70,7 @@ function parseSectionToBlock(section: string): WechatBlock | null {
     }
 
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-continuous"),
       type: "heading",
       level: 2,
       text: headingText,
@@ -89,14 +90,14 @@ function parseSectionToBlock(section: string): WechatBlock | null {
     }
 
     return {
-      id: crypto.randomUUID(),
+      id: createRandomId("wechat-continuous"),
       type: "quote",
       text: quoteText,
     };
   }
 
   return {
-    id: crypto.randomUUID(),
+    id: createRandomId("wechat-continuous"),
     type: "paragraph",
     text: section,
   };

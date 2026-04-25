@@ -6,6 +6,7 @@ import type {
 } from "../settings/prompt-settings-types.ts";
 import type { HistoryRecord } from "../types/history.ts";
 import type { PlatformType } from "../types/platform.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 
 export function createHistoryRecord(input: {
   userPrompt: string;
@@ -24,7 +25,7 @@ export function createHistoryRecord(input: {
   );
 
   return {
-    id: crypto.randomUUID(),
+    id: createRandomId("history-record"),
     schemaVersion: 1,
     autoTitle: input.autoTitle,
     title: input.autoTitle,

@@ -1,4 +1,5 @@
 import type { VideoScriptContent } from "../types/history.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 
 export type RawVideoScriptOutput = {
   title?: unknown;
@@ -99,7 +100,7 @@ function normalizeScenes(rawScenes: unknown) {
     )
     .slice(0, MAX_SCENES)
     .map((scene, index) => ({
-      id: crypto.randomUUID(),
+      id: createRandomId("video-script"),
       index: index + 1,
       shot: scene.shot,
       voiceover: scene.voiceover,
@@ -174,19 +175,19 @@ function ensureMinimumScenes(
 function createFallbackScenes() {
   return [
     {
-      id: crypto.randomUUID(),
+      id: createRandomId("video-script"),
       index: 1,
       shot: DEFAULT_OPENING_SHOT,
       voiceover: DEFAULT_VOICEOVER_PLACEHOLDER,
     },
     {
-      id: crypto.randomUUID(),
+      id: createRandomId("video-script"),
       index: 2,
       shot: DEFAULT_SHOT_PLACEHOLDER,
       voiceover: DEFAULT_MIDDLE_VOICEOVER,
     },
     {
-      id: crypto.randomUUID(),
+      id: createRandomId("video-script"),
       index: 3,
       shot: DEFAULT_CLOSING_SHOT,
       voiceover: DEFAULT_CLOSING_VOICEOVER,

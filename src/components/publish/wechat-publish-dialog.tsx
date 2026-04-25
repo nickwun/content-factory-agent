@@ -40,6 +40,7 @@ import {
   getWechatPublishTypeAvailability,
 } from "@/lib/publish/wechat-publish-ui";
 import type { HistoryRecord } from "@/lib/types/history";
+import { createRandomId } from "@/lib/utils/create-random-id";
 
 type WechatPublishDialogProps = {
   open: boolean;
@@ -171,7 +172,7 @@ export function WechatPublishDialog({
     }
 
     const runId = createRunId("publish");
-    const publishResultId = crypto.randomUUID();
+    const publishResultId = createRandomId("wechat-publish");
     const startedAt = new Date().toISOString();
     const destination =
       publishTarget === "feishu"

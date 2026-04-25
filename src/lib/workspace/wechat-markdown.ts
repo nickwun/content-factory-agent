@@ -1,4 +1,5 @@
 import type { WechatArticleContent, WechatBlock } from "../types/history.ts";
+import { createRandomId } from "../utils/create-random-id.ts";
 
 export type WechatMarkdownNode =
   | {
@@ -24,7 +25,7 @@ export type WechatMarkdownNode =
     };
 
 const EMPTY_PARAGRAPH = (): WechatBlock => ({
-  id: crypto.randomUUID(),
+  id: createRandomId("wechat-markdown"),
   type: "paragraph",
   text: "",
 });
@@ -185,31 +186,31 @@ function convertMarkdownNodeToWechatBlock(node: WechatMarkdownNode): WechatBlock
   switch (node.type) {
     case "heading":
       return {
-        id: crypto.randomUUID(),
+        id: createRandomId("wechat-markdown"),
         type: "heading",
         level: node.level === 3 ? 3 : 2,
         text: node.text,
       };
     case "quote":
       return {
-        id: crypto.randomUUID(),
+        id: createRandomId("wechat-markdown"),
         type: "quote",
         text: node.text,
       };
     case "list":
       return {
-        id: crypto.randomUUID(),
+        id: createRandomId("wechat-markdown"),
         type: "list",
         items: node.items,
       };
     case "divider":
       return {
-        id: crypto.randomUUID(),
+        id: createRandomId("wechat-markdown"),
         type: "divider",
       };
     case "paragraph":
       return {
-        id: crypto.randomUUID(),
+        id: createRandomId("wechat-markdown"),
         type: "paragraph",
         text: node.text,
       };
