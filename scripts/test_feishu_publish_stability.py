@@ -50,6 +50,29 @@ def write_publish_output(root: Path, slug: str = "article", *, feishu: dict | No
     return output_dir
 
 
+def batch_args(root: Path, **overrides):
+    values = {
+        "root": root,
+        "output_dir": None,
+        "limit": 5,
+        "run_id": "run-1",
+        "lock_path": root / ".codex_locks" / "feishu_publish.lock",
+        "dry_run": True,
+        "allow_permission_skip": False,
+        "owner_email": "",
+        "owner_user_id": "",
+        "owner_open_id": "",
+        "owner_union_id": "",
+        "builder": root / "unused-builder.py",
+        "publisher": root / "unused-publisher.py",
+        "cli": root / "unused-cli",
+        "settings_db": root / "missing.sqlite",
+        "single_timeout": 0.5,
+    }
+    values.update(overrides)
+    return types.SimpleNamespace(**values)
+
+
 def write_fake_feishu_cli(root: Path) -> Path:
     cli = root / "fake-feishu-cli.py"
     cli.write_text(
@@ -583,6 +606,113 @@ class FeishuPublishStabilityTests(unittest.TestCase):
         report_text = report.read_text(encoding="utf-8")
         self.assertIn("truncated", report_text)
         self.assertLess(len(report_text), 10_000)
+
+    def test_batch_output_dir_skips_already_published_and_releases_lock(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-output-dir-published")
+        output_dir = write_publish_output(
+            root,
+            slug="published-article",
+            feishu={
+                "status": "published",
+                "documentId": "doccn-published",
+                "documentUrl": "https://feishu.cn/docx/doccn-published",
+                "backend": "feishu-cli",
+            },
+        )
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        try:
+            result = module.publish_batch(
+                batch_args(root, output_dir=output_dir, publisher=publisher, dry_run=True)
+            )
+        finally:
+            restore_env(old_env)
+
+        self.assertEqual(result["selectedCount"], 1)
+        self.assertEqual(result["results"][0]["status"], "skipped")
+        self.assertEqual(result["results"][0]["skippedReason"], "already_published")
+        self.assertFalse(publisher_log.exists())
+        self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
+
+        state_path = Path(result["statePath"])
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        self.assertEqual(payload["selected"], [str(output_dir.resolve())])
+        article = payload["articles"][output_dir.name]
+        self.assertEqual(article["current_stage"], "skipped")
+        self.assertEqual(article["skipped_reason"], "already_published")
+
+        summary_text = Path(result["summaryPath"]).read_text(encoding="utf-8")
+        self.assertIn("already_published", summary_text)
+
+    def test_batch_output_dir_dry_run_selects_only_requested_article(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-output-dir-dry-run")
+        other = write_publish_output(root, slug="000-other-ready")
+        target = write_publish_output(root, slug="zzz-target-ready")
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        try:
+            result = module.publish_batch(
+                batch_args(root, output_dir=target, publisher=publisher, dry_run=True)
+            )
+        finally:
+            restore_env(old_env)
+
+        self.assertEqual(result["selectedCount"], 1)
+        self.assertEqual(result["results"][0]["outputDir"], str(target.resolve()))
+        self.assertEqual(result["results"][0]["status"], "dry_run")
+        self.assertNotEqual(result["results"][0]["outputDir"], str(other.resolve()))
+        self.assertFalse(publisher_log.exists())
+
+        payload = json.loads(Path(result["statePath"]).read_text(encoding="utf-8"))
+        self.assertEqual(payload["selected"], [str(target.resolve())])
+        self.assertNotIn(other.name, payload.get("articles", {}))
+        self.assertEqual(payload["articles"][target.name]["current_stage"], "dry_run")
+
+    def test_batch_output_dir_blocks_required_remote_check_without_publisher(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-output-dir-remote-check")
+        output_dir = write_publish_output(
+            root,
+            slug="blocked-article",
+            feishu={"status": "prepared", "requiresRemoteCheck": True},
+        )
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        try:
+            result = module.publish_batch(
+                batch_args(root, output_dir=output_dir, publisher=publisher, dry_run=False)
+            )
+        finally:
+            restore_env(old_env)
+
+        self.assertEqual(result["selectedCount"], 1)
+        self.assertEqual(result["results"][0]["status"], "blocked_remote_check")
+        self.assertEqual(result["results"][0]["skippedReason"], "requires_remote_check")
+        self.assertFalse(publisher_log.exists())
+
+        payload = json.loads(Path(result["statePath"]).read_text(encoding="utf-8"))
+        article = payload["articles"][output_dir.name]
+        self.assertEqual(article["current_stage"], "blocked_remote_check")
+        self.assertEqual(article["skipped_reason"], "requires_remote_check")
+        self.assertTrue(article["requires_remote_check"])
+
+    def test_batch_output_dir_outside_root_errors_before_lock_or_state(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-output-dir-root")
+        outside_root = make_temp_root("batch-output-dir-outside")
+        output_dir = write_publish_output(outside_root, slug="outside-article")
+
+        with self.assertRaises(module.FeishuBatchError) as ctx:
+            module.publish_batch(batch_args(root, output_dir=output_dir, dry_run=True))
+
+        self.assertIn("must be inside --root", str(ctx.exception))
+        self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
+        self.assertFalse((root / "batch-runs").exists())
 
 
 if __name__ == "__main__":
