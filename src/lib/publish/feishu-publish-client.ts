@@ -1,4 +1,8 @@
 import { resolveFeishuTenantAccessToken, type FeishuAppCredentials } from "./feishu-access-token.ts";
+import {
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "./fetch-with-timeout.ts";
 import { PublishServiceError } from "./publish-errors.ts";
 import type {
   FeishuCoverSyncFailureReason,
@@ -11,6 +15,7 @@ type PublishFeishuDocumentOptions = {
   fetcher?: typeof fetch;
   now?: number;
   resolveTenantAccessToken?: typeof resolveFeishuTenantAccessToken;
+  fetchTimeouts?: Partial<FeishuFetchTimeouts>;
 };
 
 type FeishuDocumentInfo = {
@@ -19,6 +24,16 @@ type FeishuDocumentInfo = {
 };
 
 const FEISHU_DOCX_CHILDREN_BATCH_SIZE = 50;
+const DEFAULT_FEISHU_FETCH_TIMEOUTS = {
+  tenantTokenMs: 10_000,
+  createDocumentMs: 30_000,
+  appendBlocksMs: 45_000,
+  downloadCoverMs: 30_000,
+  uploadImageMs: 60_000,
+  replaceImageMs: 45_000,
+};
+
+type FeishuFetchTimeouts = typeof DEFAULT_FEISHU_FETCH_TIMEOUTS;
 
 export async function publishFeishuDocument(
   credentials: FeishuAppCredentials,
@@ -26,19 +41,30 @@ export async function publishFeishuDocument(
   options: PublishFeishuDocumentOptions = {},
 ): Promise<FeishuPublishResponse> {
   const fetcher = options.fetcher ?? fetch;
+  const fetchTimeouts = {
+    ...DEFAULT_FEISHU_FETCH_TIMEOUTS,
+    ...options.fetchTimeouts,
+  };
   const accessToken = await (options.resolveTenantAccessToken ??
     resolveFeishuTenantAccessToken)(credentials, {
     fetcher,
     now: options.now,
+    requestTimeoutMs: fetchTimeouts.tenantTokenMs,
   });
 
-  const document = await createFeishuDocument(accessToken, payload.title, fetcher);
+  const document = await createFeishuDocument(
+    accessToken,
+    payload.title,
+    fetcher,
+    fetchTimeouts.createDocumentMs,
+  );
   await appendDocumentBlocks(
     accessToken,
     document.documentId,
     document.documentId,
     payload.blocks,
     fetcher,
+    fetchTimeouts,
   );
 
   if (!payload.coverImageUrl) {
@@ -57,6 +83,7 @@ export async function publishFeishuDocument(
     document.documentId,
     payload.coverImageUrl,
     fetcher,
+    fetchTimeouts,
   );
 
   if (coverSyncResult.ok) {
@@ -86,16 +113,25 @@ async function createFeishuDocument(
   accessToken: string,
   title: string,
   fetcher: typeof fetch,
+  timeoutMs: number,
 ): Promise<FeishuDocumentInfo> {
-  const response = await fetcher("https://open.feishu.cn/open-apis/docx/v1/documents", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-      Accept: "application/json",
+  const response = await runFeishuFetch(
+    fetcher,
+    "https://open.feishu.cn/open-apis/docx/v1/documents",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({ title }),
     },
-    body: JSON.stringify({ title }),
-  });
+    {
+      label: "feishu create document",
+      timeoutMs,
+    },
+  );
 
   const payload = (await response.json().catch(() => undefined)) as
     | {
@@ -141,6 +177,7 @@ async function appendDocumentBlocks(
   parentBlockId: string,
   blocks: FeishuDocxBlock[],
   fetcher: typeof fetch,
+  fetchTimeouts: FeishuFetchTimeouts,
   index?: number,
 ) {
   const children: Array<{ block_id?: string }> = [];
@@ -152,6 +189,7 @@ async function appendDocumentBlocks(
       parentBlockId,
       blockChunk,
       fetcher,
+      fetchTimeouts.appendBlocksMs,
       index,
     );
     children.push(...nextChildren);
@@ -166,10 +204,12 @@ async function appendDocumentBlockChunk(
   parentBlockId: string,
   blocks: FeishuDocxBlock[],
   fetcher: typeof fetch,
+  timeoutMs: number,
   index?: number,
 ) {
   const query = index === undefined ? "?document_revision_id=-1" : `?document_revision_id=-1&index=${index}`;
-  const response = await fetcher(
+  const response = await runFeishuFetch(
+    fetcher,
     `https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${parentBlockId}/children${query}`,
     {
       method: "POST",
@@ -179,6 +219,10 @@ async function appendDocumentBlockChunk(
         Accept: "application/json",
       },
       body: JSON.stringify({ children: blocks, ...(index === undefined ? {} : { index }) }),
+    },
+    {
+      label: "feishu append blocks",
+      timeoutMs,
     },
   );
 
@@ -220,6 +264,7 @@ async function trySyncCoverImageToFeishuDocument(
   documentId: string,
   coverImageUrl: string,
   fetcher: typeof fetch,
+  fetchTimeouts: FeishuFetchTimeouts,
 ): Promise<{ ok: true } | { ok: false; reason: FeishuCoverSyncFailureReason }> {
   try {
     const [imageBlock] = await appendDocumentBlocks(
@@ -228,6 +273,7 @@ async function trySyncCoverImageToFeishuDocument(
       documentId,
       [{ block_type: 27, image: {} }],
       fetcher,
+      fetchTimeouts,
       0,
     );
 
@@ -236,17 +282,32 @@ async function trySyncCoverImageToFeishuDocument(
       return { ok: false, reason: "insert_failed" };
     }
 
-    const downloadedImage = await downloadCoverImage(coverImageUrl, fetcher);
+    const downloadedImage = await downloadCoverImage(
+      coverImageUrl,
+      fetcher,
+      fetchTimeouts.downloadCoverMs,
+    );
     const fileToken = await uploadFeishuImage(
       accessToken,
       downloadedImage,
       imageBlockId,
       fetcher,
+      fetchTimeouts.uploadImageMs,
     );
-    await replaceImageBlock(accessToken, documentId, imageBlockId, fileToken, fetcher);
+    await replaceImageBlock(
+      accessToken,
+      documentId,
+      imageBlockId,
+      fileToken,
+      fetcher,
+      fetchTimeouts.replaceImageMs,
+    );
 
     return { ok: true };
   } catch (error) {
+    if (error instanceof PublishServiceError && error.code === "upstream_timeout") {
+      throw error;
+    }
     if (
       error instanceof PublishServiceError &&
       (error.code === "invalid_image_url" || error.code === "upstream_publish_failed")
@@ -264,8 +325,20 @@ async function trySyncCoverImageToFeishuDocument(
   }
 }
 
-async function downloadCoverImage(coverImageUrl: string, fetcher: typeof fetch) {
-  const response = await fetcher(coverImageUrl);
+async function downloadCoverImage(
+  coverImageUrl: string,
+  fetcher: typeof fetch,
+  timeoutMs: number,
+) {
+  const response = await runFeishuFetch(
+    fetcher,
+    coverImageUrl,
+    {},
+    {
+      label: "feishu download cover",
+      timeoutMs,
+    },
+  );
 
   if (!response.ok) {
     throw new PublishServiceError(
@@ -288,6 +361,7 @@ async function uploadFeishuImage(
   image: { bytes: Uint8Array; fileName: string; mimeType: string },
   imageBlockId: string,
   fetcher: typeof fetch,
+  timeoutMs: number,
 ) {
   const formData = new FormData();
   formData.set(
@@ -300,7 +374,8 @@ async function uploadFeishuImage(
   formData.set("parent_node", imageBlockId);
   formData.set("size", String(image.bytes.byteLength));
 
-  const response = await fetcher(
+  const response = await runFeishuFetch(
+    fetcher,
     "https://open.feishu.cn/open-apis/drive/v1/medias/upload_all",
     {
       method: "POST",
@@ -309,6 +384,10 @@ async function uploadFeishuImage(
         Accept: "application/json",
       },
       body: formData,
+    },
+    {
+      label: "feishu upload image",
+      timeoutMs,
     },
   );
 
@@ -341,8 +420,10 @@ async function replaceImageBlock(
   imageBlockId: string,
   fileToken: string,
   fetcher: typeof fetch,
+  timeoutMs: number,
 ) {
-  const response = await fetcher(
+  const response = await runFeishuFetch(
+    fetcher,
     `https://open.feishu.cn/open-apis/docx/v1/documents/${documentId}/blocks/${imageBlockId}`,
     {
       method: "PATCH",
@@ -356,6 +437,10 @@ async function replaceImageBlock(
           token: fileToken,
         },
       }),
+    },
+    {
+      label: "feishu replace image block",
+      timeoutMs,
     },
   );
 
@@ -372,6 +457,22 @@ async function replaceImageBlock(
       payload?.msg?.trim() || "头图插入飞书文档失败。",
       response.status >= 400 ? response.status : 502,
     );
+  }
+}
+
+async function runFeishuFetch(
+  fetcher: typeof fetch,
+  input: Parameters<typeof fetch>[0],
+  init: RequestInit,
+  options: { label: string; timeoutMs: number },
+) {
+  try {
+    return await fetchWithTimeout(fetcher, input, init, options);
+  } catch (error) {
+    if (error instanceof FetchTimeoutError) {
+      throw new PublishServiceError("upstream_timeout", error.message, 504);
+    }
+    throw error;
   }
 }
 

@@ -10,6 +10,7 @@ export type PublishErrorCode =
   | "validation_error"
   | "missing_required_asset"
   | "rate_limited"
+  | "upstream_timeout"
   | "upstream_publish_failed"
   | "missing_images"
   | "invalid_image_url"

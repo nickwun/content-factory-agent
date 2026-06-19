@@ -213,6 +213,46 @@ test("publishFeishuDocument maps invalid credential response into invalid_api_ke
   );
 });
 
+test("publishFeishuDocument maps document creation timeout into publish error", async () => {
+  await assert.rejects(
+    async () => {
+      await publishFeishuDocument(
+        credentials,
+        {
+          title: "跑步之后，脑子会慢慢亮起来",
+          blocks: [
+            {
+              block_type: 3,
+              heading1: {
+                elements: [{ text_run: { content: "跑步之后，脑子会慢慢亮起来" } }],
+              },
+            },
+          ],
+        },
+        {
+          fetchTimeouts: {
+            createDocumentMs: 5,
+          },
+          fetcher: (_input, init) =>
+            new Promise<Response>((_resolve, reject) => {
+              init?.signal?.addEventListener("abort", () => {
+                reject(new DOMException("aborted", "AbortError"));
+              });
+            }),
+          resolveTenantAccessToken: async () => "tenant-token",
+        },
+      );
+    },
+    (error: unknown) => {
+      assert.ok(error instanceof PublishServiceError);
+      assert.equal(error.code, "upstream_timeout");
+      assert.equal(error.status, 504);
+      assert.match(error.message, /create document.*5ms/);
+      return true;
+    },
+  );
+});
+
 test("publishFeishuDocument batches block writes to avoid feishu field validation limits", async () => {
   const childWriteRequests: Array<{ url: string; body: string }> = [];
 

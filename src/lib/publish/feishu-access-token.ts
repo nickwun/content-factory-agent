@@ -1,4 +1,8 @@
 import { PublishServiceError } from "./publish-errors.ts";
+import {
+  FetchTimeoutError,
+  fetchWithTimeout,
+} from "./fetch-with-timeout.ts";
 
 export type FeishuAppCredentials = {
   appId: string;
@@ -13,16 +17,22 @@ type TenantAccessTokenCacheEntry = {
 type ResolveFeishuTenantAccessTokenOptions = {
   fetcher?: typeof fetch;
   now?: number;
+  requestTimeoutMs?: number;
 };
 
 type CreateFeishuTenantAccessTokenResolverOptions = {
   safetyWindowMs?: number;
+  requestTimeoutMs?: number;
 };
+
+const DEFAULT_TENANT_TOKEN_TIMEOUT_MS = 10_000;
 
 export function createFeishuTenantAccessTokenResolver(
   options: CreateFeishuTenantAccessTokenResolverOptions = {},
 ) {
   const safetyWindowMs = options.safetyWindowMs ?? 60_000;
+  const defaultRequestTimeoutMs =
+    options.requestTimeoutMs ?? DEFAULT_TENANT_TOKEN_TIMEOUT_MS;
   const cache = new Map<string, TenantAccessTokenCacheEntry>();
 
   return async function resolveFeishuTenantAccessToken(
@@ -38,20 +48,37 @@ export function createFeishuTenantAccessTokenResolver(
       return cached.accessToken;
     }
 
-    const response = await fetcher(
-      "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Accept: "application/json",
+    let response: Response;
+    try {
+      response = await fetchWithTimeout(
+        fetcher,
+        "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+          },
+          body: JSON.stringify({
+            app_id: credentials.appId,
+            app_secret: credentials.appSecret,
+          }),
         },
-        body: JSON.stringify({
-          app_id: credentials.appId,
-          app_secret: credentials.appSecret,
-        }),
-      },
-    );
+        {
+          label: "feishu tenant token",
+          timeoutMs: resolveOptions.requestTimeoutMs ?? defaultRequestTimeoutMs,
+        },
+      );
+    } catch (error) {
+      if (error instanceof FetchTimeoutError) {
+        throw new PublishServiceError(
+          "upstream_timeout",
+          error.message,
+          504,
+        );
+      }
+      throw error;
+    }
 
     const payload = (await response.json().catch(() => undefined)) as
       | {
