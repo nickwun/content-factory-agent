@@ -26,6 +26,12 @@
 data/*.sqlite
 data/*.sqlite-shm
 data/*.sqlite-wal
+data/*.sqlite*.bak
+*.sqlite*.bak
+*.db.bak
+__pycache__/
+*.pyc
+/outputs/
 
 # debug
 npm-debug.log*
