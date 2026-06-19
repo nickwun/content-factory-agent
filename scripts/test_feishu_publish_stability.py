@@ -714,6 +714,83 @@ class FeishuPublishStabilityTests(unittest.TestCase):
         self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
         self.assertFalse((root / "batch-runs").exists())
 
+    def test_batch_owner_missing_fails_before_lock_state_or_publisher(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-owner-missing")
+        output_dir = write_publish_output(root)
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        for key in ["FEISHU_OWNER_USER_ID", "FEISHU_OWNER_EMAIL", "FEISHU_OWNER_OPEN_ID", "FEISHU_OWNER_UNION_ID"]:
+            os.environ.pop(key, None)
+        try:
+            with self.assertRaises(module.FeishuBatchError) as ctx:
+                module.publish_batch(
+                    batch_args(root, output_dir=output_dir, publisher=publisher, dry_run=False)
+                )
+        finally:
+            restore_env(old_env)
+
+        message = str(ctx.exception)
+        self.assertIn("FEISHU_OWNER_USER_ID", message)
+        self.assertIn("FEISHU_OWNER_OPEN_ID", message)
+        self.assertIn("FEISHU_OWNER_UNION_ID", message)
+        self.assertIn("FEISHU_OWNER_EMAIL", message)
+        self.assertIn("--allow-permission-skip", message)
+        self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
+        self.assertFalse((root / "batch-runs" / "run-1" / "run_state.json").exists())
+        self.assertFalse(publisher_log.exists())
+
+    def test_batch_owner_missing_with_permission_skip_continues_to_publisher(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-owner-skip")
+        output_dir = write_publish_output(root)
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        for key in ["FEISHU_OWNER_USER_ID", "FEISHU_OWNER_EMAIL", "FEISHU_OWNER_OPEN_ID", "FEISHU_OWNER_UNION_ID"]:
+            os.environ.pop(key, None)
+        try:
+            result = module.publish_batch(
+                batch_args(
+                    root,
+                    output_dir=output_dir,
+                    publisher=publisher,
+                    dry_run=False,
+                    allow_permission_skip=True,
+                )
+            )
+        finally:
+            restore_env(old_env)
+
+        self.assertEqual(result["selectedCount"], 1)
+        self.assertEqual(result["results"][0]["status"], "failed")
+        self.assertTrue(publisher_log.exists())
+        self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
+        self.assertTrue(Path(result["statePath"]).exists())
+
+    def test_batch_owner_missing_dry_run_continues_without_publisher(self):
+        module = load_skill_module("publish_feishu_batch")
+        root = make_temp_root("batch-owner-dry-run")
+        output_dir = write_publish_output(root)
+        publisher = write_fake_publisher(root)
+        publisher_log = root / "publisher-calls.log"
+        old_env = with_fake_feishu_env(FAKE_PUBLISHER_LOG=publisher_log)
+        for key in ["FEISHU_OWNER_USER_ID", "FEISHU_OWNER_EMAIL", "FEISHU_OWNER_OPEN_ID", "FEISHU_OWNER_UNION_ID"]:
+            os.environ.pop(key, None)
+        try:
+            result = module.publish_batch(
+                batch_args(root, output_dir=output_dir, publisher=publisher, dry_run=True)
+            )
+        finally:
+            restore_env(old_env)
+
+        self.assertEqual(result["selectedCount"], 1)
+        self.assertEqual(result["results"][0]["status"], "dry_run")
+        self.assertFalse(publisher_log.exists())
+        self.assertFalse((root / ".codex_locks" / "feishu_publish.lock").exists())
+        self.assertTrue(Path(result["statePath"]).exists())
+
 
 if __name__ == "__main__":
     unittest.main()
